@@ -589,9 +589,16 @@ async function startServer() {
     }
 
     if (isRealArch) {
-      // Since uninstallation requires sudo privileges, we spawn a polkit authentication dialog
-      // standard pacman removal stream
-      return res.json({ success: true, message: "Host installation purge initialized." });
+      try {
+        console.log(`[ArchForge] Invoking pkexec to uninstall ${name}...`);
+        await execAsync(`pkexec pacman -Rns --noconfirm ${name}`);
+        cachedPackages = [];
+        lastCacheUpdate = 0;
+        return res.json({ success: true, message: `Host package uninstalled successfully.` });
+      } catch (err: any) {
+        console.error(`[ArchForge] Uninstallation failed:`, err);
+        return res.status(500).json({ error: `GUI Privilege escalation or package removal failed: ${err.message}` });
+      }
     }
 
     const index = installedPackages.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
@@ -682,6 +689,110 @@ async function startServer() {
         }
       ]
     });
+  });
+
+  // GET Desktop Integration Status
+  app.get("/api/system/desktop-integration/status", async (req, res) => {
+    try {
+      const isAppImage = !!process.env.APPIMAGE;
+      const appImagePath = process.env.APPIMAGE || process.execPath;
+      const homeDir = os.homedir();
+      const desktopFilePath = path.join(homeDir, ".local/share/applications/archforge.desktop");
+      let isInstalled = false;
+      if (fs.existsSync(desktopFilePath)) {
+        const fileContent = fs.readFileSync(desktopFilePath, "utf8");
+        if (fileContent.includes("ArchForge")) {
+          isInstalled = true;
+        }
+      }
+      res.json({
+        isAppImage,
+        appImagePath,
+        desktopFilePath,
+        isInstalled
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST Desktop Integration Setup
+  app.post("/api/system/desktop-integration/install", async (req, res) => {
+    try {
+      const homeDir = os.homedir();
+      const binDir = path.join(homeDir, ".local/bin");
+      const appDir = path.join(homeDir, "Applications");
+      const applicationsDir = path.join(homeDir, ".local/share/applications");
+      const iconDir = path.join(homeDir, ".local/share/icons");
+
+      // Ensure standard directories exist
+      await fs.promises.mkdir(binDir, { recursive: true });
+      await fs.promises.mkdir(appDir, { recursive: true });
+      await fs.promises.mkdir(applicationsDir, { recursive: true });
+      await fs.promises.mkdir(iconDir, { recursive: true });
+
+      const currentBinary = process.env.APPIMAGE || process.execPath;
+      const isAppImage = !!process.env.APPIMAGE;
+      
+      // Default executable destination
+      let targetPath = path.join(binDir, "ArchForge.AppImage");
+      
+      if (isAppImage) {
+        console.log(`[ArchForge Integrator] Copying AppImage from ${currentBinary} to ${targetPath}...`);
+        await fs.promises.copyFile(currentBinary, targetPath);
+        await fs.promises.chmod(targetPath, 0o755);
+      } else {
+        targetPath = currentBinary;
+      }
+
+      // Download / Create the desktop launcher icon
+      const localIconPath = path.join(iconDir, "archforge.png");
+      try {
+        console.log("[ArchForge Integrator] Fetching application launcher icon...");
+        const response = await fetch("https://cdn-icons-png.flaticon.com/512/5904/5904576.png");
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        await fs.promises.writeFile(localIconPath, buffer);
+      } catch (err) {
+        const srcIcon = path.join(__dirname, "archforge.png");
+        if (fs.existsSync(srcIcon)) {
+          await fs.promises.copyFile(srcIcon, localIconPath);
+        } else {
+          await fs.promises.writeFile(localIconPath, "");
+        }
+      }
+
+      // Generate .desktop entry
+      const desktopFilePath = path.join(applicationsDir, "archforge.desktop");
+      const desktopTemplate = `[Desktop Entry]
+Type=Application
+Name=ArchForge Manager
+Exec=${targetPath} --no-sandbox %U
+Icon=${localIconPath}
+Comment=Bare-metal Arch Linux package and AUR repository manager
+Categories=System;Utility;Settings;PackageManager;
+Terminal=false
+StartupWMClass=ArchForge
+`;
+
+      await fs.promises.writeFile(desktopFilePath, desktopTemplate, "utf8");
+      
+      try {
+        await execAsync(`update-desktop-database ${applicationsDir}`).catch(() => {});
+        await execAsync(`xdg-desktop-menu forceupdate`).catch(() => {});
+      } catch {}
+
+      res.json({
+        success: true,
+        message: "Successfully installed ArchForge Manager to your local application menu!",
+        desktopPath: desktopFilePath,
+        executablePath: targetPath,
+        iconPath: localIconPath
+      });
+    } catch (err: any) {
+      console.error("[ArchForge Integrator] Setup failed:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // 5. System Health & Performance gauges (Direct Hardware reading)
@@ -778,15 +889,8 @@ async function startServer() {
       sendLine(`==> [ArchForge System Upgrade] Initializing full base-system upgrade...`);
       sendLine(`==> Authentication prompts may request permission to run system update operations.`);
       
-      let executable = "sudo";
+      let executable = "pkexec";
       let execArgs = ["pacman", "-Syu", "--noconfirm"];
-      try {
-        const { stdout: hasYay } = await execAsync("which yay").catch(() => ({ stdout: "" }));
-        if (hasYay.trim()) {
-          executable = "yay";
-          execArgs = ["-Syu", "--noconfirm"];
-        }
-      } catch {}
 
       sendLine(`==> Executing: ${executable} ${execArgs.join(" ")}`);
       const upgradeProc = spawn(executable, execArgs, { env: { ...process.env, FORCE_COLOR: "true" } });
@@ -845,7 +949,10 @@ async function startServer() {
 
         // 3. Initiate makepkg -si --noconfirm compilation on actual Arch Linux platform userpace
         // Runs makepkg as the node child process owner (which runs with user privileges securely on host)
-        const makepkg = spawn("makepkg", ["-si", "--noconfirm", "--needed"], { cwd: buildWorkspace });
+        const makepkg = spawn("makepkg", ["-si", "--noconfirm", "--needed"], { 
+          cwd: buildWorkspace,
+          env: { ...process.env, SUDO: "pkexec" }
+        });
 
         let hasFakerootError = false;
 

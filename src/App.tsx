@@ -64,6 +64,49 @@ export default function App() {
   const [verificationProgress, setVerificationProgress] = useState<number>(0);
   const [activeVerificationStep, setActiveVerificationStep] = useState<number>(0);
 
+  // Desktop Integration state
+  const [integrationStatus, setIntegrationStatus] = useState<{
+    isAppImage: boolean;
+    appImagePath: string;
+    desktopFilePath: string;
+    isInstalled: boolean;
+  } | null>(null);
+  const [isIntegrating, setIsIntegrating] = useState<boolean>(false);
+  const [integrationSuccessMsg, setIntegrationSuccessMsg] = useState<string | null>(null);
+
+  const loadIntegrationStatus = async () => {
+    try {
+      const res = await fetch("/api/system/desktop-integration/status");
+      if (res.ok) {
+        const data = await res.json();
+        setIntegrationStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to load desktop integration status:", err);
+    }
+  };
+
+  const executeDesktopIntegration = async () => {
+    setIsIntegrating(true);
+    setIntegrationSuccessMsg(null);
+    try {
+      const res = await fetch("/api/system/desktop-integration/install", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setIntegrationSuccessMsg(data.message || "Successfully integrated with your Linux application launcher!");
+        await loadIntegrationStatus();
+      } else {
+        const errData = await res.json();
+        alert(`Integration failed: ${errData.error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      console.error("Failed to run desktop integration:", err);
+      alert(`Integration failed: ${err.message}`);
+    } finally {
+      setIsIntegrating(false);
+    }
+  };
+
   // Set page tab title
   useEffect(() => {
     document.title = "ArchForge System Package Manager";
@@ -180,6 +223,7 @@ export default function App() {
 
   useEffect(() => {
     refreshSystemData(true);
+    loadIntegrationStatus();
   }, []);
 
   // Action: Compile and Register Package
@@ -370,7 +414,13 @@ export default function App() {
           </div>
 
           <button
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => {
+              const nextVal = !showSettings;
+              setShowSettings(nextVal);
+              if (nextVal) {
+                loadIntegrationStatus();
+              }
+            }}
             className={`flex h-9 w-9 items-center justify-center rounded-xl cursor-pointer border transition-all duration-200 ${
               showSettings
                 ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-400 shadow-[0_0_12px_rgba(var(--accent-rgb,6,182,212),0.15)]"
@@ -392,7 +442,7 @@ export default function App() {
             exit={{ opacity: 0, height: 0, marginBottom: 0 }}
             className="overflow-hidden"
           >
-            <div className="glass-panel rounded-xl p-5 border border-white/5 flex flex-col gap-5 md:grid md:grid-cols-2 md:gap-8 items-stretch">
+            <div className="glass-panel rounded-xl p-5 border border-white/5 flex flex-col gap-5 lg:grid lg:grid-cols-3 lg:gap-8 items-stretch">
               {/* Theme Selector Section */}
               <div className="space-y-3 flex flex-col justify-between">
                 <div>
@@ -433,7 +483,7 @@ export default function App() {
               </div>
 
               {/* Accent Color Customizer Section */}
-              <div className="space-y-3 flex flex-col justify-between">
+              <div className="space-y-3 flex flex-col justify-between border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
                 <div>
                   <div className="flex items-center gap-2">
                     <Palette className="h-4 w-4 text-cyan-400" />
@@ -488,6 +538,91 @@ export default function App() {
                     </span>
                     <span>Picker</span>
                   </label>
+                </div>
+              </div>
+
+              {/* Desktop App Integration */}
+              <div className="space-y-3 flex flex-col justify-between border-t lg:border-t-0 border-white/5 pt-4 lg:pt-0">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-cyan-400" />
+                    <h3 className="text-xs font-bold font-mono tracking-wide text-white uppercase">
+                      Desktop App Integration
+                    </h3>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-sans mt-1">
+                    Register ArchForge directly as a first-class citizen Linux app. Enables launcher shortcuts, dock pin capability, and system Polkit authentication.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {integrationStatus ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2 p-2 bg-zinc-900/25 border border-white/5 rounded-lg">
+                        <span className="text-[10px] text-slate-400 font-mono">Status:</span>
+                        {integrationStatus.isInstalled ? (
+                          <span className="flex items-center gap-1 text-[9px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded font-mono font-bold uppercase">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                            Integrated
+                          </span>
+                        ) : (
+                          <span className="text-[9px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded font-mono font-bold uppercase">
+                            Unregistered
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-0.5 text-[9px] text-slate-400 font-mono leading-tight">
+                        <div className="truncate">Source: {integrationStatus.isAppImage ? "Host AppImage Bundle" : "Dev Workspace Process"}</div>
+                        <div className="truncate" title={integrationStatus.desktopFilePath}>Target: ~/.local/share/applications/archforge.desktop</div>
+                      </div>
+
+                      {!integrationStatus.isInstalled ? (
+                        <button
+                          onClick={executeDesktopIntegration}
+                          disabled={isIntegrating}
+                          className="w-full shrink-0 flex items-center justify-center gap-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 p-2 text-xs font-mono font-black text-black transition cursor-pointer disabled:opacity-50 shadow-md shadow-cyan-500/10"
+                        >
+                          {isIntegrating ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 animate-spin text-black" />
+                              INTEGRATING...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-3 w-3 text-black" />
+                              INTEGRATE WITH DESKTOP
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={executeDesktopIntegration}
+                          disabled={isIntegrating}
+                          className="w-full shrink-0 flex items-center justify-center gap-2 rounded-lg bg-zinc-800/85 border border-white/10 p-2 text-xs font-mono text-slate-300 hover:bg-zinc-750 transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isIntegrating ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 animate-spin text-slate-300" />
+                              RE-LINKING...
+                            </>
+                          ) : (
+                            "RE-INTEGRATE Launcher"
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center p-4">
+                      <RefreshCw className="h-4 w-4 animate-spin text-cyan-400/50" />
+                    </div>
+                  )}
+
+                  {integrationSuccessMsg && (
+                    <div className="p-2 border border-emerald-500/20 bg-emerald-500/5 rounded-md text-[10px] text-emerald-400 font-sans leading-normal">
+                      {integrationSuccessMsg}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
