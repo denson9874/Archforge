@@ -1,14 +1,14 @@
 {
-  "name": "react-example",
+  "name": "archforge",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "desktop": "tsx server.ts --desktop",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --sourcemap --outfile=dist/server.cjs",
+    "dev": "vite build && python3 server.py",
+    "desktop": "vite build && python3 server.py --desktop",
+    "build": "vite build",
     "bundle:appimage": "bash scripts/build-appimage.sh",
-    "start": "node dist/server.cjs",
+    "start": "python3 server.py",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
