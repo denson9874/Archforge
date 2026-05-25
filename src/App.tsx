@@ -35,6 +35,7 @@ import PackageDetailDrawer from "./components/PackageDetailDrawer";
 import BuildProgressModal from "./components/BuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
 import AICopilot from "./components/AICopilot";
+import ArchForgeLogo from "./components/ArchForgeLogo";
 
 interface ThemePreset {
   id: "classic" | "matrix" | "cyberpunk" | "nordic" | "warm-autumn";
@@ -495,8 +496,8 @@ export default function App() {
       {/* Global Application Header Navigation Layout */}
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500 shadow-lg shadow-cyan-400/20">
-            <Layers className="h-5.5 w-5.5 text-zinc-950 stroke-[2.5]" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-950/80 border border-white/10 shadow-lg shadow-cyan-500/10 backdrop-blur-md">
+            <ArchForgeLogo size={28} />
           </div>
           <div>
             <div className="flex items-center gap-2">

@@ -25,13 +25,29 @@ aur_database_map = {}
 is_indexing = False
 last_index_time = 0
 cache_file_path = os.path.join(tempfile.gettempdir(), "aur_index_cache.json")
+aur_index_lock = threading.RLock()
+
+def save_aur_index_to_cache():
+    global aur_database_index
+    with aur_index_lock:
+        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(cache_file_path), prefix="aur_index_cache_tmp_")
+        try:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                json.dump(aur_database_index, f, indent=2)
+            os.replace(temp_path, cache_file_path)
+        except Exception as e:
+            print("[ArchForge] Error saving index atomically to temporary file:", e)
+            if os.path.exists(temp_path):
+                try: os.unlink(temp_path)
+                except: pass
 
 def rebuild_aur_map():
     global aur_database_map
-    aur_database_map = {}
-    for idx, pkg in enumerate(aur_database_index):
-        if pkg and "Name" in pkg:
-            aur_database_map[pkg["Name"].lower()] = {"index": idx, "pkg": pkg}
+    with aur_index_lock:
+        aur_database_map = {}
+        for idx, pkg in enumerate(aur_database_index):
+            if pkg and "Name" in pkg:
+                aur_database_map[pkg["Name"].lower()] = {"index": idx, "pkg": pkg}
 
 # Load seed metadata or saved index
 initial_aur_seeds = [
@@ -56,20 +72,24 @@ initial_aur_seeds = [
 
 def load_aur_index():
     global aur_database_index
-    try:
-        if os.path.exists(cache_file_path):
-            with open(cache_file_path, "r", encoding="utf-8") as f:
-                aur_database_index = json.load(f)
-            print(f"Loaded {len(aur_database_index)} AUR packages from cache file.")
-        else:
+    with aur_index_lock:
+        try:
+            if os.path.exists(cache_file_path):
+                with open(cache_file_path, "r", encoding="utf-8") as f:
+                    aur_database_index = json.load(f)
+                print(f"Loaded {len(aur_database_index)} AUR packages from cache file.")
+            else:
+                aur_database_index = list(initial_aur_seeds)
+                save_aur_index_to_cache()
+                print(f"Initialized AUR package index with {len(aur_database_index)} seeds.")
+        except Exception as e:
+            print("Failed to load/save AUR index, resetting to seeds. Exception:", e)
             aur_database_index = list(initial_aur_seeds)
-            with open(cache_file_path, "w", encoding="utf-8") as f:
-                json.dump(aur_database_index, f, indent=2)
-            print(f"Initialized AUR package index with {len(aur_database_index)} seeds.")
-    except Exception as e:
-        print("Failed to load/save AUR index:", e)
-        aur_database_index = list(initial_aur_seeds)
-    rebuild_aur_map()
+            try:
+                save_aur_index_to_cache()
+            except Exception:
+                pass
+        rebuild_aur_map()
 
 load_aur_index()
 
@@ -294,12 +314,11 @@ def run_full_aur_indexing():
                 new_map[pkg["Name"].lower()] = {"index": idx, "pkg": pkg}
                 
         # Atomic swap of the global pointers
-        aur_database_index = new_index
-        aur_database_map = new_map
-        last_index_time = int(time.time() * 1000)
-        
-        with open(cache_file_path, "w", encoding="utf-8") as f:
-            json.dump(aur_database_index, f, indent=2)
+        with aur_index_lock:
+            aur_database_index = new_index
+            aur_database_map = new_map
+            last_index_time = int(time.time() * 1000)
+            save_aur_index_to_cache()
         print(f"==> Indexing job completed recursively. Added: {added}, Updated: {updated}. Total: {len(aur_database_index)}")
     except Exception as e:
         print("Failed running complete Python indexer:", e)
@@ -307,7 +326,10 @@ def run_full_aur_indexing():
         is_indexing = False
 
 def start_index_runner_deferred():
-    if len(aur_database_index) <= len(initial_aur_seeds):
+    global aur_database_index, is_indexing
+    with aur_index_lock:
+        current_len = len(aur_database_index)
+    if current_len <= len(initial_aur_seeds):
         threading.Thread(target=run_full_aur_indexing, daemon=True).start()
 
 # Deferred full indexing launch
@@ -694,7 +716,7 @@ class StandaloneRouter(BaseHTTPRequestHandler):
             self.send_error(500, f"Internal Server Error: {str(e)}")
 
     def do_GET(self):
-        global aur_database_index, aur_database_map
+        global aur_database_index, aur_database_map, is_indexing, last_index_time
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
@@ -789,15 +811,16 @@ class StandaloneRouter(BaseHTTPRequestHandler):
             q_val = query.get("q", [""])[0]
             local_matches = []
             
-            if len(q_val) >= 2:
-                q_low = q_val.lower()
-                local_matches = [x for x in aur_database_index if q_low in x.get("Name", "").lower() or q_low in x.get("Description", "").lower()]
-            elif not q_val or q_val.strip() == "":
-                self.send_json({"results": aur_database_index})
-                return
-            else:
-                self.send_json({"results": []})
-                return
+            with aur_index_lock:
+                if len(q_val) >= 2:
+                    q_low = q_val.lower()
+                    local_matches = [x for x in aur_database_index if q_low in x.get("Name", "").lower() or q_low in x.get("Description", "").lower()]
+                elif not q_val or q_val.strip() == "":
+                    self.send_json({"results": list(aur_database_index)})
+                    return
+                else:
+                    self.send_json({"results": []})
+                    return
                 
             try:
                 url = f"https://aur.archlinux.org/rpc/?v=5&type=search&arg={urllib.parse.quote(q_val)}"
@@ -814,40 +837,40 @@ class StandaloneRouter(BaseHTTPRequestHandler):
                         live_results = resp_data.get('results', [])
                     
                 # Learning index merging
-                index_modified = False
-                for item in live_results:
-                    name = item.get("Name")
-                    if not name:
-                        continue
-                    name_low = name.lower()
-                    
-                    mapped_item = {
-                        "Name": name,
-                        "Version": item.get("Version", "1.0.0-1"),
-                        "Description": item.get("Description", ""),
-                        "URL": item.get("URL", f"https://aur.archlinux.org/packages/{name}"),
-                        "NumVotes": int(item.get("NumVotes", 0)) if item.get("NumVotes") is not None else 0,
-                        "Popularity": float(item.get("Popularity", 0.0)) if item.get("Popularity") is not None else 0.0,
-                        "OutOfDate": item.get("OutOfDate"),
-                        "Maintainer": item.get("Maintainer", "orphan"),
-                        "FirstSubmitted": item.get("FirstSubmitted", int(time.time()) - 365 * 24 * 3600),
-                        "LastModified": item.get("LastModified", int(time.time()) - 2 * 24 * 3600)
-                    }
-                    
-                    if name_low in aur_database_map:
-                        idx_pos = aur_database_map[name_low]["index"]
-                        aur_database_index[idx_pos].update(mapped_item)
-                    else:
-                        aur_database_index.append(mapped_item)
-                        aur_database_map[name_low] = {"index": len(aur_database_index) - 1, "pkg": mapped_item}
-                        index_modified = True
+                with aur_index_lock:
+                    index_modified = False
+                    for item in live_results:
+                        name = item.get("Name")
+                        if not name:
+                            continue
+                        name_low = name.lower()
                         
-                if index_modified:
-                    if len(aur_database_index) > 15000:
-                        aur_database_index = aur_database_index[:15000]
-                    rebuild_aur_map()
-                    with open(cache_file_path, "w", encoding="utf-8") as f:
-                        json.dump(aur_database_index, f, indent=2)
+                        mapped_item = {
+                            "Name": name,
+                            "Version": item.get("Version", "1.0.0-1"),
+                            "Description": item.get("Description", ""),
+                            "URL": item.get("URL", f"https://aur.archlinux.org/packages/{name}"),
+                            "NumVotes": int(item.get("NumVotes", 0)) if item.get("NumVotes") is not None else 0,
+                            "Popularity": float(item.get("Popularity", 0.0)) if item.get("Popularity") is not None else 0.0,
+                            "OutOfDate": item.get("OutOfDate"),
+                            "Maintainer": item.get("Maintainer", "orphan"),
+                            "FirstSubmitted": item.get("FirstSubmitted", int(time.time()) - 365 * 24 * 3600),
+                            "LastModified": item.get("LastModified", int(time.time()) - 2 * 24 * 3600)
+                        }
+                        
+                        if name_low in aur_database_map:
+                            idx_pos = aur_database_map[name_low]["index"]
+                            aur_database_index[idx_pos].update(mapped_item)
+                        else:
+                            aur_database_index.append(mapped_item)
+                            aur_database_map[name_low] = {"index": len(aur_database_index) - 1, "pkg": mapped_item}
+                            index_modified = True
+                            
+                    if index_modified:
+                        if len(aur_database_index) > 15000:
+                            aur_database_index = aur_database_index[:15000]
+                        rebuild_aur_map()
+                        save_aur_index_to_cache()
                         
                 # Merge lists
                 merged_map = {}
@@ -870,9 +893,11 @@ class StandaloneRouter(BaseHTTPRequestHandler):
                 self.send_json({"results": local_matches})
 
         elif path == "/api/aur/index/status":
-            abandoned = len([x for x in aur_database_index if (time.time() - x.get("LastModified", 0)) > 180 * 24 * 3600])
+            with aur_index_lock:
+                current_len = len(aur_database_index)
+                abandoned = len([x for x in aur_database_index if (time.time() - x.get("LastModified", 0)) > 180 * 24 * 3600])
             self.send_json({
-                "indexedCount": len(aur_database_index),
+                "indexedCount": current_len,
                 "isIndexing": is_indexing,
                 "lastIndexTime": last_index_time,
                 "abandonedCount": abandoned
@@ -981,6 +1006,7 @@ package() {{
             self.send_error_json(404, "API endpoint not found")
 
     def do_POST(self):
+        global aur_database_index, is_indexing, last_index_time, cached_packages, last_cache_update
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         
@@ -995,7 +1021,6 @@ package() {{
                 return
                 
             if IS_REAL_ARCH:
-                global cached_packages, last_cache_update
                 cached_packages = []
                 last_cache_update = 0
                 self.send_json({"success": True, "message": "Package cleared for physical local db sync"})
@@ -1273,20 +1298,24 @@ StartupWMClass=ArchForge
                 self.send_error_json(404, "No active compilation session is requesting inline sudo privileges.")
 
         elif path == "/api/aur/index/sync":
+            with aur_index_lock:
+                current_len = len(aur_database_index)
             if is_indexing:
                 self.send_json({
                     "success": True,
                     "message": "Indexing is currently running in background.",
                     "isIndexing": True,
-                    "indexedCount": len(aur_database_index)
+                    "indexedCount": current_len
                 })
                 return
             threading.Thread(target=run_full_aur_indexing, daemon=True).start()
+            with aur_index_lock:
+                current_len = len(aur_database_index)
             self.send_json({
                 "success": True,
                 "message": "Full database indexing successfully dispatched in background.",
                 "isIndexing": True,
-                "indexedCount": len(aur_database_index),
+                "indexedCount": current_len,
                 "lastIndexTime": last_index_time
             })
 
