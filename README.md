@@ -1,9 +1,10 @@
 <div align="center">
+  <img src="archforge_logo.svg" alt="ArchForge Logo" width="160" height="160" />
+  <h1>ArchForge</h1>
+  <p><strong>Your One Stop Shop for all AUR Package Management</strong></p>
 </div>
 
-# Welcome to ArchForge: Your One Stop Shop for all AUR package Management
-
-ArchForge, an interactive, full-stack visual management console and live build simulator for the Arch Linux AUR and system-wide package repositories.
+ArchForge is an interactive, full-stack visual management console and live build simulator for the Arch Linux AUR and system-wide package repositories.
 The application is deployed as a highly functional, responsive dashboard on an Express + Vite server proxy, enabling real-time connection to the genuine Arch Linux AUR RPC API.
 
 🌟 Key Features & Architecture

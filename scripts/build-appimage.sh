@@ -93,6 +93,7 @@ echo "==> Bundling full-stack production build assets into payload..."
 cp -r dist "${APPDIR}/resources/app/"
 cp package.json "${APPDIR}/resources/app/"
 cp server.py "${APPDIR}/resources/app/"
+cp "${APPDIR}/archforge.png" "${APPDIR}/resources/app/"
 
 echo "==> Generating standalone Electron Orchestrator and API pipeline..."
 cat << 'EOF' > "${APPDIR}/resources/app/main.cjs"
