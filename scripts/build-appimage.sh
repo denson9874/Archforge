@@ -96,47 +96,273 @@ echo "==> Generating standalone Electron Orchestrator and API pipeline..."
 cat << 'EOF' > "${APPDIR}/resources/app/main.cjs"
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const http = require('http');
+const { execSync } = require('child_process');
 
-// Spin up our embedded local Express backend server within the same container thread
+// 1. Force production environment immediately to prevent Vite loading in server.cjs
+process.env.NODE_ENV = 'production';
+
+// 2. Automated Bare-Metal Self-Installation/Desktop Integration (Like Chrome on Linux)
+function performDesktopIntegration() {
+  const isAppImage = !!process.env.APPIMAGE;
+  const currentBinary = process.env.APPIMAGE || process.execPath;
+  const homeDir = os.homedir();
+  const binDir = path.join(homeDir, '.local', 'bin');
+  const targetAppPath = path.join(binDir, 'archforge');
+  const applicationsDir = path.join(homeDir, '.local', 'share', 'applications');
+  const desktopFilePath = path.join(applicationsDir, 'archforge.desktop');
+  const iconDir = path.join(homeDir, '.local', 'share', 'icons');
+  const iconPath = path.join(iconDir, 'archforge.png');
+
+  try {
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.mkdirSync(applicationsDir, { recursive: true });
+    fs.mkdirSync(iconDir, { recursive: true });
+
+    // Copy our AppImage executable to the standard consumer binary directory
+    if (isAppImage && currentBinary !== targetAppPath) {
+      console.log(`[ArchForge Self-Installer] Propagating binary to ${targetAppPath}...`);
+      fs.copyFileSync(currentBinary, targetAppPath);
+      fs.chmodSync(targetAppPath, 0o755);
+    }
+
+    // Try copying or writing our core launcher icon
+    const embeddedIcon = path.join(__dirname, 'archforge.png');
+    if (fs.existsSync(embeddedIcon)) {
+      fs.copyFileSync(embeddedIcon, iconPath);
+    }
+
+    const execCmd = isAppImage ? targetAppPath : currentBinary;
+    const desktopTemplate = `[Desktop Entry]
+Type=Application
+Name=ArchForge Manager
+Exec=${execCmd} --no-sandbox %U
+Icon=${iconPath}
+Comment=Bare-metal Arch Linux package and AUR repository manager
+Categories=System;Utility;Settings;PackageManager;
+Terminal=false
+StartupWMClass=ArchForge
+`;
+
+    fs.writeFileSync(desktopFilePath, desktopTemplate, 'utf8');
+    
+    // Refresh the Linux system desktop launcher cache database
+    try {
+      execSync(`update-desktop-database ${applicationsDir}`, { stdio: 'ignore' });
+    } catch {}
+    console.log('[ArchForge Self-Installer] Native desktop configuration established successfully!');
+  } catch (err) {
+    console.error('[ArchForge Self-Installer] Integration failed:', err);
+  }
+}
+
+// 3. Launch embedded Express backend server asynchronously
 const serverPath = path.join(__dirname, 'dist', 'server.cjs');
-console.log('[Electron] Loading Express backend: ', serverPath);
+console.log('[Electron Core] Loading Express database server:', serverPath);
 require(serverPath);
 
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    title: "ArchForge Manager",
-    icon: path.join(__dirname, 'archforge.png'),
+let mainWindow = null;
+let splashWindow = null;
+
+// HTML data URL for the elegant, dynamic boot splash screen
+const SPLASH_HTML = `
+<html>
+  <head>
+    <title>ArchForge</title>
+    <style>
+      body {
+        background-color: #0c0a09;
+        color: #f5f5f4;
+        font-family: system-ui, -apple-system, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+        user-select: none;
+      }
+      .logo-container {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 28px;
+      }
+      .pulse-ring {
+        position: absolute;
+        width: 80px;
+        height: 80px;
+        border: 2px solid #06b6d4;
+        border-radius: 50%;
+        animation: pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+        opacity: 0.3;
+      }
+      @keyframes pulse {
+        0% { transform: scale(0.8); opacity: 0.5; }
+        100% { transform: scale(1.6); opacity: 0; }
+      }
+      .spinner {
+        width: 48px;
+        height: 48px;
+        border: 3px solid rgba(6, 182, 212, 0.1);
+        border-radius: 50%;
+        border-top-color: #06b6d4;
+        animation: spin 0.8s cubic-bezier(0.55, 0.085, 0.68, 0.53) infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      h2 {
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        margin: 0;
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+      }
+      .desc {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+        color: #a8a29e;
+        margin-top: 10px;
+        opacity: 0.85;
+      }
+      .progress-dots {
+        display: flex;
+        gap: 6px;
+        margin-top: 20px;
+      }
+      .dot {
+        width: 5px;
+        height: 5px;
+        background-color: #44403c;
+        border-radius: 50%;
+        animation: dotPulse 1.4s ease-in-out infinite both;
+      }
+      .dot:nth-child(2) { animation-delay: 0.2s; }
+      .dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes dotPulse {
+        0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; }
+        40% { transform: scale(1.2); background-color: #06b6d4; opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="logo-container">
+      <div class="pulse-ring"></div>
+      <div class="spinner"></div>
+    </div>
+    <h2>ARCHFORGE MANAGER</h2>
+    <div id="status" class="desc">Booting secure core engine...</div>
+    <div class="progress-dots">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  </body>
+</html>
+`;
+
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 420,
+    height: 320,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
     }
   });
 
-  // Connect to the local Express server API and React UI
-  win.loadURL('http://localhost:3000');
-
-  // Hide traditional menu bar for clean modern window layout
-  win.setMenuBarVisibility(false);
-
-  // Delegate external HTTP references (such as AUR package websites) to the user's host web browser
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http://localhost:3000') || url.startsWith('http://127.0.0.1:3000')) {
-      return { action: 'allow' };
-    }
-    console.log('[Electron] Forwarding external URL to standard browser:', url);
-    shell.openExternal(url);
-    return { action: 'deny' };
+  splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SPLASH_HTML)}`);
+  splashWindow.once('ready-to-show', () => {
+    splashWindow.show();
   });
 }
 
+function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    title: "ArchForge Manager",
+    icon: path.join(__dirname, 'archforge.png'),
+    show: false,
+    backgroundColor: '#0c0a09',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  mainWindow.setMenuBarVisibility(false);
+  mainWindow.loadURL('http://localhost:3000');
+
+  mainWindow.once('ready-to-show', () => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.close();
+    }
+    mainWindow.show();
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://localhost:3000') || url.startsWith('http://127.0.0.1:3000')) {
+      return { action: 'allow' };
+    }
+    console.log('[Electron Native Router] Opening URL externally:', url);
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+function pollLocalExpressServer(port, callback) {
+  let attempts = 0;
+  const maxAttempts = 100;
+  const check = () => {
+    attempts++;
+    const req = http.get(`http://localhost:${port}/api/system/stats`, (res) => {
+      callback(true);
+    });
+    
+    req.on('error', () => {
+      if (attempts < maxAttempts) {
+        setTimeout(check, 150);
+      } else {
+        callback(false);
+      }
+    });
+  };
+  check();
+}
+
 app.whenReady().then(() => {
-  createWindow();
+  createSplashWindow();
+  performDesktopIntegration();
+
+  pollLocalExpressServer(3000, (success) => {
+    if (success) {
+      createMainWindow();
+    } else {
+      console.error('[Electron Core] Critical server connection timed out!');
+      app.quit();
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createMainWindow();
     }
   });
 });
