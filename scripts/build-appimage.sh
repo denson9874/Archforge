@@ -92,6 +92,7 @@ rm -f "${APPDIR}/resources/default_app.asar"
 echo "==> Bundling full-stack production build assets into payload..."
 cp -r dist "${APPDIR}/resources/app/"
 cp package.json "${APPDIR}/resources/app/"
+cp server.py "${APPDIR}/resources/app/"
 
 echo "==> Generating standalone Electron Orchestrator and API pipeline..."
 cat << 'EOF' > "${APPDIR}/resources/app/main.cjs"
@@ -159,10 +160,28 @@ StartupWMClass=ArchForge
   }
 }
 
-// 3. Launch embedded Express backend server asynchronously
-const serverPath = path.join(__dirname, 'dist', 'server.cjs');
-console.log('[Electron Core] Loading Express database server:', serverPath);
-require(serverPath);
+// 3. Launch embedded Python REST and static file server asynchronously
+const { spawn } = require('child_process');
+const serverPath = path.join(__dirname, 'server.py');
+console.log('[Electron Core] Spawning Python core database server:', serverPath);
+
+const pythonProcess = spawn('python3', [serverPath], {
+  env: { ...process.env, PORT: '3000' },
+  stdio: 'inherit'
+});
+
+pythonProcess.on('error', (err) => {
+  console.error('[Electron Core] Critical: Failed to spawn Python database server:', err);
+});
+
+// Ensure python process is killed when Electron main loop exits or quits
+app.on('will-quit', () => {
+  console.log('[Electron Core] Stopping Python core database server...');
+  pythonProcess.kill();
+});
+process.on('exit', () => {
+  pythonProcess.kill();
+});
 
 let mainWindow = null;
 let splashWindow = null;

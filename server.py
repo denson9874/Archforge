@@ -522,7 +522,8 @@ class StandaloneRouter(BaseHTTPRequestHandler):
     
     def serve_static_file(self, file_path):
         normalized = os.path.abspath(file_path)
-        dist_abs = os.path.abspath("dist")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        dist_abs = os.path.abspath(os.path.join(script_dir, "dist"))
         if not normalized.startswith(dist_abs):
             self.send_error(403, "Access Forbidden")
             return
@@ -558,12 +559,13 @@ class StandaloneRouter(BaseHTTPRequestHandler):
         
         # Check static serving fallback
         if not path.startswith("/api/"):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
             relative_path = path.lstrip("/")
-            target_path = os.path.join("dist", relative_path if relative_path else "index.html")
+            target_path = os.path.join(script_dir, "dist", relative_path if relative_path else "index.html")
             if os.path.exists(target_path) and os.path.isfile(target_path):
                 self.serve_static_file(target_path)
             else:
-                self.serve_static_file(os.path.join("dist", "index.html"))
+                self.serve_static_file(os.path.join(script_dir, "dist", "index.html"))
             return
 
         # API Handlers
