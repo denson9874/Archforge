@@ -1,0 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-cyan-300: var(--accent-300, #67e8f9);
+  --color-cyan-400: var(--accent-400, #22d3ee);
+  --color-cyan-500: var(--accent-500, #06b6d4);
+  --color-cyan-950: var(--accent-950, #083344);
+}
+
+:root {
+  --bg-app: #0b0e14;
+  --text-primary: #e2e8f0;
+}
+
+body {
+  background-color: var(--bg-app, #0b0e14);
+  color: var(--text-primary, #e2e8f0);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom Frosted Glass classes for optimal transparency & contrast rendering */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.45);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-panel-hover:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 15px 45px 0 rgba(0, 0, 0, 0.55), 0 0 20px 2px rgba(var(--accent-rgb, 6, 182, 212), 0.1);
+  transform: translateY(-2px);
+}
+
+.glass-panel-active {
+  background: rgba(var(--accent-rgb, 6, 182, 212), 0.06);
+  border-color: rgba(var(--accent-rgb, 6, 182, 212), 0.3);
+  box-shadow: inset 0 0 12px 1px rgba(var(--accent-rgb, 6, 182, 212), 0.05);
+}
+
+.glass-pill-container {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+}
+
+.glass-pill-item {
+  color: #94a3b8;
+  transition: all 0.2s ease;
+}
+
+.glass-pill-item:hover {
+  color: #f1f5f9;
+}
+
+.glass-pill-item-selected {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-400, #22d3ee);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  transition: all 0.3s ease;
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--accent-400, #22d3ee);
+  box-shadow: 0 0 14px 2px rgba(var(--accent-rgb, 6, 182, 212), 0.12);
+}
+
+/* Light mode overrides for Tailwind variables so we don't need to surgically edit 50 components */
+.theme-light {
+  --bg-app: #f4f6f9;
+  --text-primary: #1e293b;
+  
+  --color-white: #0f172a;               /* headings / strong elements */
+  --color-slate-200: #1e293b;           /* primary body texts */
+  --color-slate-300: #334155;           /* secondary body texts */
+  --color-slate-400: #475569;           /* captions / description texts */
+  --color-slate-500: #64748b;           /* muted texts */
+  --color-zinc-400: #475569;            /* standard zinc texts */
+  --color-zinc-500: #64748b;
+  --color-zinc-650: #8ba3c7;
+  --color-zinc-350: #334155;
+  --color-zinc-300: #334155;
+  --color-zinc-550: #475569;
+  --color-zinc-600: #64748b;
+  
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.72) !important;
+    backdrop-filter: blur(25px) saturate(150%) !important;
+    -webkit-backdrop-filter: blur(25px) saturate(150%) !important;
+    border: 1px solid rgba(15, 23, 42, 0.08) !important;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 8px -1px rgba(15, 23, 42, 0.03) !important;
+  }
+  
+  .glass-panel-hover:hover {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border-color: rgba(15, 23, 42, 0.14) !important;
+    box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.08), 0 0 12px 1px rgba(var(--accent-rgb, 6, 182, 212), 0.12) !important;
+  }
+
+  .glass-pill-container {
+    background: rgba(15, 23, 42, 0.04) !important;
+    border: 1px solid rgba(15, 23, 42, 0.06) !important;
+  }
+
+  .glass-pill-item {
+    color: #475569 !important;
+  }
+
+  .glass-pill-item:hover {
+    color: #0f172a !important;
+  }
+
+  .glass-pill-item-selected {
+    background: rgba(255, 255, 255, 0.85) !important;
+    color: var(--accent-400, #22d3ee) !important;
+    border: 1px solid rgba(15, 23, 42, 0.08) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .glass-input {
+    background: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid rgba(15, 23, 42, 0.12) !important;
+    color: #0f172a !important;
+  }
+
+  .glass-input:focus {
+    background: #ffffff !important;
+    border-color: var(--accent-400, #22d3ee) !important;
+    box-shadow: 0 0 8px 1px rgba(var(--accent-rgb, 6, 182, 212), 0.15) !important;
+  }
+  
+  /* Reduction of background orbs brightness */
+  .pointer-events-none {
+    opacity: 0.25 !important;
+  }
+}
+
+/* Scrollbar visual customization */
+.glass-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.glass-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.glass-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.glass-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

@@ -1,0 +1,6 @@
+{
+  "name": "ArchForge",
+  "description": "An interactive, visual AUR and official package manager dashboard for Arch Linux, featuring live dependency resolution, real-time PKGBUILD analysis, simulated sandbox compiler and build logging, a power-user CLI, and health monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

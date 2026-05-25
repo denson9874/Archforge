@@ -1,0 +1,57 @@
+name: Compile and Distribute AppImage Executable
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-appimage:
+    name: Build Standalone Linux AppImage
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js LTS
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install Development Dependencies
+      run: |
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
+
+    - name: Compile Standalone Linux AppImage Binary
+      run: bash scripts/build-appimage.sh
+
+    - name: Archive Built Executable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ArchForge-x86_64.AppImage
+        path: ArchForge-x86_64.AppImage
+        if-no-files-found: error
+
+    - name: Publish Built AppImage to GitHub Releases
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ArchForge-x86_64.AppImage
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
