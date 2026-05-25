@@ -1,12 +1,46 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { exec, spawn, execSync } from "child_process";
+import { exec as cpExec, spawn as cpSpawn, execSync as cpExecSync } from "child_process";
 import os from "os";
 import fs from "fs";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
+// Get pristine host environment by purging environment variables contaminated by AppImage wrapper
+function getCleanEnv(): NodeJS.ProcessEnv {
+  const cleanEnv = { ...process.env };
+  if (cleanEnv.LD_LIBRARY_PATH_OLD !== undefined) {
+    cleanEnv.LD_LIBRARY_PATH = cleanEnv.LD_LIBRARY_PATH_OLD;
+  } else {
+    delete cleanEnv.LD_LIBRARY_PATH;
+  }
+  if (cleanEnv.PATH_OLD !== undefined) {
+    cleanEnv.PATH = cleanEnv.PATH_OLD;
+  }
+  return cleanEnv;
+}
+
+// Wrapper to prevent AppImage library collision inside host-executed processes
+const exec = (cmd: string, options: any, callback?: any) => {
+  if (typeof options === "function") {
+    callback = options;
+    options = {};
+  }
+  const opts = { ...options, env: { ...getCleanEnv(), ...options?.env } };
+  return cpExec(cmd, opts, callback);
+};
+
+const spawn = (cmd: string, args: string[], options?: any) => {
+  const opts = { ...(options || {}), env: { ...getCleanEnv(), ...(options?.env || {}) } };
+  return cpSpawn(cmd, args, opts);
+};
+
+const execSync = (cmd: string, options?: any) => {
+  const opts = { ...(options || {}), env: { ...getCleanEnv(), ...(options?.env || {}) } };
+  return cpExecSync(cmd, opts);
+};
+
+const execAsync = promisify(exec) as unknown as (cmd: string, options?: any) => Promise<{ stdout: string; stderr: string }>;
 
 // Interfaces
 interface InstalledPackage {
@@ -1124,7 +1158,7 @@ package() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = __dirname;
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
@@ -1148,7 +1182,7 @@ package() {
     }
   });
 
-  // If "--desktop" flag is passed, automatically launch the app in a freamless app window!
+  // If "--desktop" flag is passed, automatically launch the app in a frameless app window!
   if (process.argv.includes("--desktop")) {
     setTimeout(() => {
       const url = `http://localhost:${PORT}`;
@@ -1161,10 +1195,17 @@ package() {
       ];
 
       function tryLaunch(idx: number) {
-        if (idx >= commands.length) return;
+        if (idx >= commands.length) {
+          console.error("❌ Failed to launch any web browser wrapper or system opener.");
+          return;
+        }
+        console.log(`Trying to launch: ${commands[idx]}`);
         exec(commands[idx], (err) => {
           if (err) {
+            console.warn(`⚠️ Failed launch technique (${commands[idx]}):`, err.message);
             tryLaunch(idx + 1);
+          } else {
+            console.log(`🎉 Successfully launched desktop shell window!`);
           }
         });
       }
