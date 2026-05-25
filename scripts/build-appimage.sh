@@ -64,7 +64,7 @@ EOF
 
 # 5. Fetch/Create Sleek AppIcon
 echo "==> Fetching sleek packaging icon for ArchForge..."
-curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/5904/5904576.png" || {
+curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/2919/2919598.png" || {
   echo "⚠️ Failed downloading icon from backup Flaticon CDN; generating a fallback visual placeholder instead..."
   touch "${APPDIR}/archforge.png"
 }

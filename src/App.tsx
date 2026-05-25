@@ -36,6 +36,58 @@ import BuildProgressModal from "./components/BuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
 import AICopilot from "./components/AICopilot";
 
+interface ThemePreset {
+  id: "classic" | "matrix" | "cyberpunk" | "nordic" | "warm-autumn";
+  name: string;
+  darkBg: string;
+  lightBg: string;
+  defaultAccent: string;
+  orbs: string[];
+}
+
+const THEME_PRESETS: ThemePreset[] = [
+  {
+    id: "classic",
+    name: "Cosmic Slate",
+    darkBg: "#0b0e14",
+    lightBg: "#f4f6f9",
+    defaultAccent: "#22d3ee",
+    orbs: ["bg-indigo-600/10", "bg-cyan-600/5", "bg-violet-600/5"]
+  },
+  {
+    id: "matrix",
+    name: "Matrix Neon",
+    darkBg: "#020804",
+    lightBg: "#f0f7f2",
+    defaultAccent: "#10b981",
+    orbs: ["bg-emerald-600/10", "bg-green-600/5", "bg-teal-600/5"]
+  },
+  {
+    id: "cyberpunk",
+    name: "Cyber Neon",
+    darkBg: "#0f0b21",
+    lightBg: "#faf1f7",
+    defaultAccent: "#ec4899",
+    orbs: ["bg-pink-600/10", "bg-fuchsia-600/5", "bg-indigo-600/5"]
+  },
+  {
+    id: "nordic",
+    name: "Nordic Frost",
+    darkBg: "#080f1e",
+    lightBg: "#edf3f8",
+    defaultAccent: "#3b82f6",
+    orbs: ["bg-blue-600/10", "bg-sky-600/5", "bg-indigo-600/5"]
+  },
+  {
+    id: "warm-autumn",
+    name: "Solar Autumn",
+    darkBg: "#120e0b",
+    lightBg: "#fcf8f2",
+    defaultAccent: "#f59e0b",
+    orbs: ["bg-amber-600/10", "bg-orange-600/5", "bg-rose-500/5"]
+  }
+];
+
 export default function App() {
   const [installedPackages, setInstalledPackages] = useState<InstalledPackage[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
@@ -44,6 +96,9 @@ export default function App() {
   // Theme & Custom Accent Color States
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
     return (localStorage.getItem("archforge-theme") as "dark" | "light" | "system") || "system";
+  });
+  const [themeOption, setThemeOption] = useState<"classic" | "matrix" | "cyberpunk" | "nordic" | "warm-autumn">(() => {
+    return (localStorage.getItem("archforge-theme-option") as any) || "classic";
   });
   const [resolvedSystemTheme, setResolvedSystemTheme] = useState<"dark" | "light">("dark");
   const [accentColor, setAccentColor] = useState<string>(() => {
@@ -137,21 +192,28 @@ export default function App() {
 
   useEffect(() => {
     detectGtkTheme();
-    const interval = setInterval(detectGtkTheme, 8000);
+    const interval = setInterval(detectGtkTheme, 4000);
     return () => clearInterval(interval);
   }, []);
 
   // Sync theme to document element
   useEffect(() => {
     const root = document.documentElement;
+    const activePreset = THEME_PRESETS.find(p => p.id === themeOption) || THEME_PRESETS[0];
     const activeTheme = theme === "system" ? resolvedSystemTheme : theme;
+    
     if (activeTheme === "light") {
       root.classList.add("theme-light");
     } else {
       root.classList.remove("theme-light");
     }
+
+    const targetBg = activeTheme === "light" ? activePreset.lightBg : activePreset.darkBg;
+    root.style.setProperty("--bg-app", targetBg);
+
     localStorage.setItem("archforge-theme", theme);
-  }, [theme, resolvedSystemTheme]);
+    localStorage.setItem("archforge-theme-option", themeOption);
+  }, [theme, resolvedSystemTheme, themeOption]);
 
   // Sync custom accent color shades dynamically
   useEffect(() => {
@@ -404,12 +466,15 @@ export default function App() {
     return true;
   });
 
+  const activePreset = THEME_PRESETS.find(p => p.id === themeOption) || THEME_PRESETS[0];
+  const orbs = activePreset.orbs;
+
   return (
     <div className="min-h-screen text-slate-200 font-sans flex flex-col p-4 md:p-6 lg:p-8 relative overflow-hidden transition-colors duration-300">
       {/* Background stars look and cosmic border alignment with gorgeous glowing frosted orbs */}
-      <div className="absolute top-[-200px] left-[-200px] w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
-      <div className="absolute top-[30%] right-[-200px] w-[500px] h-[500px] bg-cyan-600/5 rounded-full blur-[100px] pointer-events-none -z-10"></div>
-      <div className="absolute bottom-[-200px] left-[20%] w-[500px] h-[500px] bg-violet-600/5 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+      <div className={`absolute top-[-200px] left-[-200px] w-[600px] h-[600px] ${orbs[0]} rounded-full blur-[120px] pointer-events-none -z-10 transition-all duration-700`}></div>
+      <div className={`absolute top-[30%] right-[-200px] w-[500px] h-[500px] ${orbs[1]} rounded-full blur-[100px] pointer-events-none -z-10 transition-all duration-700`}></div>
+      <div className={`absolute bottom-[-200px] left-[20%] w-[500px] h-[500px] ${orbs[2]} rounded-full blur-[120px] pointer-events-none -z-10 transition-all duration-700`}></div>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(var(--accent-rgb,6,182,212),0.02),transparent)] pointer-events-none -z-10"></div>
 
       {/* Global Application Header Navigation Layout */}
@@ -486,195 +551,188 @@ export default function App() {
             className="overflow-hidden"
           >
             <div className="glass-panel rounded-xl p-5 border border-white/5 flex flex-col gap-5 lg:grid lg:grid-cols-3 lg:gap-8 items-stretch">
-              {/* Theme Selector Section */}
-              <div className="space-y-3 flex flex-col justify-between">
+              {/* Theme Column 1: System Coupling Profile */}
+              <div className="space-y-3 flex flex-col justify-between border-b lg:border-b-0 pb-4 lg:pb-0 border-white/5">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Sun className="h-4 w-4 text-cyan-400" />
+                    <Monitor className="h-4 w-4 text-cyan-400" />
                     <h3 className="text-xs font-bold font-mono tracking-wide text-white uppercase">
-                      System Identity Interface Theme
+                      Desktop DE Coupling
                     </h3>
                   </div>
                   <p className="text-[11px] text-slate-400 font-sans mt-1">
-                    Synchronize with your system's GTK color profile or manually force Cosmic Slate or Arch Light settings.
+                    Synchronize with your Linux desktop GTK theme preferences or manually lock dark/light settings.
                   </p>
                 </div>
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="grid grid-cols-3 gap-2 pt-1 text-center">
                   <button
                     onClick={() => setTheme("system")}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition duration-150 cursor-pointer text-[10px] font-bold ${
+                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border py-2.5 px-2 transition duration-150 cursor-pointer text-[10px] font-bold uppercase font-mono ${
                       theme === "system"
                         ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
                         : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
                     }`}
-                    title={`Currently resolved local GTK theme: ${resolvedSystemTheme === "dark" ? "Dark Mode" : "Light Mode"}`}
+                    title={`Locally resolved user GTK theme: ${resolvedSystemTheme === "dark" ? "Dark Theme" : "Light Theme"}`}
                   >
                     <Monitor className="h-3.5 w-3.5 shrink-0" />
-                    <span>System GTK</span>
+                    <span>System Sync</span>
                   </button>
                   <button
                     onClick={() => setTheme("dark")}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition duration-150 cursor-pointer text-[10px] font-bold ${
+                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border py-2.5 px-2 transition duration-150 cursor-pointer text-[10px] font-bold uppercase font-mono ${
                       theme === "dark"
                         ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
                         : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
                     }`}
                   >
                     <Moon className="h-3.5 w-3.5 shrink-0" />
-                    <span>Cosmic Slate</span>
+                    <span>Force Dark</span>
                   </button>
                   <button
                     onClick={() => setTheme("light")}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition duration-150 cursor-pointer text-[10px] font-bold ${
+                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border py-2.5 px-2 transition duration-150 cursor-pointer text-[10px] font-bold uppercase font-mono ${
                       theme === "light"
                         ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
                         : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
                     }`}
                   >
                     <Sun className="h-3.5 w-3.5 shrink-0" />
-                    <span>Arch Light</span>
+                    <span>Force Light</span>
                   </button>
                 </div>
               </div>
 
-              {/* Accent Color Customizer Section */}
-              <div className="space-y-3 flex flex-col justify-between border-t md:border-t-0 border-white/5 pt-4 md:pt-0">
+              {/* Theme Column 2: dynamic high-fidelity theme presets */}
+              <div className="space-y-3 flex flex-col justify-between border-b lg:border-b-0 pb-4 lg:pb-0 border-white/5">
                 <div>
                   <div className="flex items-center gap-2">
                     <Palette className="h-4 w-4 text-cyan-400" />
                     <h3 className="text-xs font-bold font-mono tracking-wide text-white uppercase">
-                      Custom Accent Identity Color
+                      Forge Glow Theme Persona
                     </h3>
                   </div>
                   <p className="text-[11px] text-slate-400 font-sans mt-1">
-                    Tailor application borders, buttons, metrics, and active package control states.
+                    Select a core system theme persona to style background canvases, metrics gradients, and luminous colors.
                   </p>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2.5 pt-2">
-                  {[
-                    { hex: "#22d3ee", label: "Classic Cyan" },
-                    { hex: "#10b981", label: "Arch Emerald" },
-                    { hex: "#3b82f6", label: "Pacman Blue" },
-                    { hex: "#f59e0b", label: "Solar Amber" },
-                    { hex: "#a855f7", label: "Laser Purple" },
-                    { hex: "#ec4899", label: "Plasma Pink" },
-                  ].map((color) => {
-                    const isActive = accentColor.toLowerCase() === color.hex.toLowerCase();
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {THEME_PRESETS.map((p) => {
+                    const isSelected = themeOption === p.id;
                     return (
                       <button
-                        key={color.hex}
-                        onClick={() => setAccentColor(color.hex)}
-                        style={{ backgroundColor: color.hex }}
-                        className={`h-7 w-7 rounded-full cursor-pointer transition transform hover:scale-110 flex items-center justify-center border ${
-                          isActive ? "ring-2 ring-cyan-400/50 border-white/60 shadow" : "border-white/15"
+                        key={p.id}
+                        onClick={() => {
+                          setThemeOption(p.id);
+                          setAccentColor(p.defaultAccent);
+                        }}
+                        className={`px-2.5 py-1.5 text-[9.5px] rounded-lg border font-mono font-bold uppercase transition flex items-center gap-1 cursor-pointer pr-3 ${
+                          isSelected
+                            ? "border-cyan-400/45 bg-cyan-500/10 text-cyan-400 shadow-md"
+                            : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
                         }`}
-                        title={color.label}
                       >
-                        {isActive && <Check className="h-4 w-4 text-zinc-900 stroke-[3]" />}
+                        <span className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: p.defaultAccent }} />
+                        {p.name}
                       </button>
                     );
                   })}
-
-                  <div className="h-6 w-px bg-white/10 mx-1"></div>
-
-                  {/* Dynamic Color Picker */}
-                  <label className="flex items-center gap-2 cursor-pointer bg-zinc-900/30 hover:bg-zinc-900/50 transition border border-white/5 py-1 px-2 rounded-lg text-[10px] font-mono font-bold text-slate-300">
-                    <span 
-                      style={{ backgroundColor: accentColor }} 
-                      className="h-4 w-4 rounded-full border border-white/20 inline-block relative overflow-hidden shrink-0"
-                    >
-                      <input
-                        type="color"
-                        value={accentColor}
-                        onChange={(e) => setAccentColor(e.target.value)}
-                        className="absolute inset-x-0 top-0 h-8 w-8 opacity-0 scale-150"
-                      />
-                    </span>
-                    <span>Picker</span>
-                  </label>
                 </div>
               </div>
 
-              {/* Desktop App Integration */}
-              <div className="space-y-3 flex flex-col justify-between border-t lg:border-t-0 border-white/5 pt-4 lg:pt-0">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-cyan-400" />
-                    <h3 className="text-xs font-bold font-mono tracking-wide text-white uppercase">
-                      Desktop App Integration
+              {/* Theme Column 3: Accents & Desktop integration (Compact split-row) */}
+              <div className="space-y-3 flex flex-col justify-between">
+                <div className="flex gap-4 items-start">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xs font-bold font-mono tracking-wide text-white uppercase flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+                      Accent Override
                     </h3>
+                    {/* Compact Accent Color Circles */}
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      {[
+                        { hex: "#22d3ee", label: "Classic Cyan" },
+                        { hex: "#10b981", label: "Arch Emerald" },
+                        { hex: "#3b82f6", label: "Pacman Blue" },
+                        { hex: "#f59e0b", label: "Solar Amber" },
+                        { hex: "#ec4899", label: "Plasma Pink" },
+                      ].map((color) => {
+                        const isActive = accentColor.toLowerCase() === color.hex.toLowerCase();
+                        return (
+                          <button
+                            key={color.hex}
+                            onClick={() => setAccentColor(color.hex)}
+                            style={{ backgroundColor: color.hex }}
+                            className={`h-5 w-5 rounded-full cursor-pointer transition transform hover:scale-110 flex items-center justify-center border ${
+                              isActive ? "ring-2 ring-cyan-400/50 border-white/60 shadow" : "border-white/15"
+                            }`}
+                            title={color.label}
+                          >
+                            {isActive && <Check className="h-2.5 w-2.5 text-zinc-900 stroke-[3]" />}
+                          </button>
+                        );
+                      })}
+                      {/* Accent Picker */}
+                      <label className="flex items-center cursor-pointer justify-center hover:bg-zinc-850 transition border border-white/5 h-5 px-1.5 rounded text-[8px] font-mono font-bold text-slate-300">
+                        <span 
+                          style={{ backgroundColor: accentColor }} 
+                          className="h-3 w-3 rounded-full border border-white/20 inline-block relative overflow-hidden shrink-0 mr-1"
+                        >
+                          <input
+                            type="color"
+                            value={accentColor}
+                            onChange={(e) => setAccentColor(e.target.value)}
+                            className="absolute inset-x-0 top-0 h-8 w-8 opacity-0 scale-150"
+                          />
+                        </span>
+                        <span>PICK</span>
+                      </label>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-sans mt-1">
-                    Register ArchForge directly as a first-class citizen Linux app. Enables launcher shortcuts, dock pin capability, and system Polkit authentication.
-                  </p>
                 </div>
 
-                <div className="space-y-2 pt-1">
+                <div className="border-t border-white/5 pt-2.5">
                   {integrationStatus ? (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between gap-2 p-2 bg-zinc-900/25 border border-white/5 rounded-lg">
-                        <span className="text-[10px] text-slate-400 font-mono">Status:</span>
-                        {integrationStatus.isInstalled ? (
-                          <span className="flex items-center gap-1 text-[9px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded font-mono font-bold uppercase">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
-                            Integrated
-                          </span>
-                        ) : (
-                          <span className="text-[9px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded font-mono font-bold uppercase">
-                            Unregistered
-                          </span>
-                        )}
+                    <div className="flex items-center justify-between gap-3 bg-zinc-900/10 border border-white/5 p-2 rounded-lg">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9.5px] font-bold text-slate-300 font-mono text-xs uppercase">Launcher:</span>
+                          {integrationStatus.isInstalled ? (
+                            <span className="text-[8px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-mono font-extrabold uppercase">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="text-[8px] bg-amber-500/15 border border-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-mono font-extrabold uppercase">
+                              Unlinked
+                            </span>
+                          )}
+                        </div>
                       </div>
-
-                      <div className="flex flex-col gap-0.5 text-[9px] text-slate-400 font-mono leading-tight">
-                        <div className="truncate">Source: {integrationStatus.isAppImage ? "Host AppImage Bundle" : "Dev Workspace Process"}</div>
-                        <div className="truncate" title={integrationStatus.desktopFilePath}>Target: ~/.local/share/applications/archforge.desktop</div>
-                      </div>
-
+                      
                       {!integrationStatus.isInstalled ? (
                         <button
                           onClick={executeDesktopIntegration}
                           disabled={isIntegrating}
-                          className="w-full shrink-0 flex items-center justify-center gap-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 p-2 text-xs font-mono font-black text-black transition cursor-pointer disabled:opacity-50 shadow-md shadow-cyan-500/10"
+                          className="shrink-0 flex items-center gap-1 rounded bg-cyan-500 hover:bg-cyan-400 py-1 px-2.5 text-[10px] font-mono font-black text-black transition cursor-pointer disabled:opacity-50"
                         >
-                          {isIntegrating ? (
-                            <>
-                              <RefreshCw className="h-3 w-3 animate-spin text-black" />
-                              INTEGRATING...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="h-3 w-3 text-black" />
-                              INTEGRATE WITH DESKTOP
-                            </>
-                          )}
+                          {isIntegrating ? "Linking..." : "Integrate"}
                         </button>
                       ) : (
                         <button
                           onClick={executeDesktopIntegration}
                           disabled={isIntegrating}
-                          className="w-full shrink-0 flex items-center justify-center gap-2 rounded-lg bg-zinc-800/85 border border-white/10 p-2 text-xs font-mono text-slate-300 hover:bg-zinc-750 transition cursor-pointer disabled:opacity-50"
+                          className="shrink-0 py-1 px-2.5 text-[9px] font-mono text-slate-400 hover:text-white rounded border border-white/10 hover:bg-white/5 transition cursor-pointer"
                         >
-                          {isIntegrating ? (
-                            <>
-                              <RefreshCw className="h-3 w-3 animate-spin text-slate-300" />
-                              RE-LINKING...
-                            </>
-                          ) : (
-                            "RE-INTEGRATE Launcher"
-                          )}
+                          {isIntegrating ? "Updating..." : "Re-Link"}
                         </button>
                       )}
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center p-4">
-                      <RefreshCw className="h-4 w-4 animate-spin text-cyan-400/50" />
+                    <div className="flex items-center justify-center p-2">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400/50" />
                     </div>
                   )}
-
                   {integrationSuccessMsg && (
-                    <div className="p-2 border border-emerald-500/20 bg-emerald-500/5 rounded-md text-[10px] text-emerald-400 font-sans leading-normal">
+                    <div className="mt-1.5 text-[8.5px] text-emerald-400 font-mono leading-normal">
                       {integrationSuccessMsg}
                     </div>
                   )}
@@ -997,8 +1055,8 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        {/* Dynamic Sidebar drawer: Package detail view panel */}
-        <aside className="space-y-6">
+        {/* Dynamic Sidebar drawer: Sticky Package detail view panel */}
+        <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-60px)] lg:overflow-y-auto pr-1 space-y-6 glass-scrollbar">
           {selectedPkgName ? (
             <PackageDetailDrawer
               pkgName={selectedPkgName}

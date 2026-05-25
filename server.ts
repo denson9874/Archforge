@@ -912,7 +912,7 @@ async function startServer() {
       let iconBuffer: Buffer | null = null;
       try {
         console.log("[ArchForge Integrator] Fetching application launcher icon...");
-        const response = await fetch("https://cdn-icons-png.flaticon.com/512/5904/5904576.png");
+        const response = await fetch("https://cdn-icons-png.flaticon.com/512/2919/2919598.png");
         const arrayBuffer = await response.arrayBuffer();
         iconBuffer = Buffer.from(arrayBuffer);
         await fs.promises.writeFile(localIconPath, iconBuffer);
