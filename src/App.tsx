@@ -333,10 +333,11 @@ export default function App() {
   // Action: Uninstall packages from local cache
   const handleUninstall = async (name: string) => {
     try {
+      const pw = sessionStorage.getItem("archforge-sudopw") || "";
       const res = await fetch("/api/packages/uninstall", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name, pw })
       });
 
       if (res.ok) {
@@ -1003,16 +1004,18 @@ export default function App() {
              depends={compilingPackage.Depends || compilingPackage.depends || []}
              onComplete={handleCompilationSuccess}
              onCancel={() => setCompilingPackage(null)}
+             isRealArch={stats?.isRealArch}
           />
         )}
 
         {isSyuUpgrade && (
           <BuildProgressModal
-            pkgName="system-upgrade"
-            pkgVersion="aur-syu"
-            depends={installedPackages.filter(p => p.hasUpdate).map(p => p.name)}
-            onComplete={handleSyuCompilationSuccess}
-            onCancel={() => setIsSyuUpgrade(false)}
+             pkgName="system-upgrade"
+             pkgVersion="aur-syu"
+             depends={installedPackages.filter(p => p.hasUpdate).map(p => p.name)}
+             onComplete={handleSyuCompilationSuccess}
+             onCancel={() => setIsSyuUpgrade(false)}
+             isRealArch={stats?.isRealArch}
           />
         )}
       </AnimatePresence>

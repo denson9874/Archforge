@@ -8,6 +8,7 @@ interface BuildProgressModalProps {
   depends?: string[];
   onComplete: () => void;
   onCancel: () => void;
+  isRealArch?: boolean;
 }
 
 export default function BuildProgressModal({
@@ -15,9 +16,17 @@ export default function BuildProgressModal({
   pkgVersion,
   depends = [],
   onComplete,
-  onCancel
+  onCancel,
+  isRealArch
 }: BuildProgressModalProps) {
   const [logs, setLogs] = useState<string[]>([]);
+  const [sudoPwInput, setSudoPwInput] = useState("");
+  const [rememberPw, setRememberPw] = useState(true);
+  const [authSubmitted, setAuthSubmitted] = useState(false);
+
+  // Determine if we need to show the Auth Panel before starting the build
+  const needsAuth = !!isRealArch && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
+
   const [currentPhase, setCurrentPhase] = useState("");
   const [percentage, setPercentage] = useState(0);
   const [complete, setComplete] = useState(false);
@@ -33,11 +42,17 @@ export default function BuildProgressModal({
   const steps = generateBuildSteps(pkgName, pkgVersion, depends);
 
   useEffect(() => {
+    // If we're on a real Arch system but haven't submitted the password yet, don't start the stream!
+    if (isRealArch && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted) {
+      return;
+    }
+
     let active = true;
     let logBuffer: string[] = [];
 
     // Connect to Server-Sent Events (SSE) stream to fetch live bare-metal command stdout
-    const sseUrl = `/api/packages/install/stream?name=${encodeURIComponent(pkgName)}`;
+    const savedSudoPw = sessionStorage.getItem("archforge-sudopw") || "";
+    const sseUrl = `/api/packages/install/stream?name=${encodeURIComponent(pkgName)}&pw=${encodeURIComponent(savedSudoPw)}`;
     let eventSource: EventSource | null = null;
 
     try {
@@ -233,7 +248,7 @@ export default function BuildProgressModal({
         eventSource.close();
       }
     };
-  }, [pkgName, pkgVersion]);
+  }, [pkgName, pkgVersion, authSubmitted, isRealArch]);
 
   // Handle auto-scroll of scrolling terminal console
   useEffect(() => {
@@ -241,6 +256,86 @@ export default function BuildProgressModal({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs]);
+
+  if (needsAuth) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md select-none animate-fadeIn">
+        <div className="relative w-full max-w-md overflow-hidden rounded-2xl p-6 glass-panel border border-white/10 shadow-2xl">
+          {/* Ambient header glow */}
+          <div className="absolute right-0 top-0 -z-10 h-32 w-32 rounded-full bg-cyan-500/10 blur-2xl"></div>
+          
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="h-12 w-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shadow-inner">
+              <Lock className="h-6 w-6 animate-pulse" />
+            </div>
+            
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-white uppercase font-mono tracking-wider">
+                Authentication Required
+              </h3>
+              <p className="text-xs text-zinc-400 font-sans max-w-sm">
+                ArchForge requires administrative privileges on your local system to compile, resolve dependencies, and register <span className="text-cyan-400 font-mono font-bold">{pkgName}</span>.
+              </p>
+            </div>
+          </div>
+
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (rememberPw) {
+                sessionStorage.setItem("archforge-sudopw", sudoPwInput);
+              }
+              setAuthSubmitted(true);
+            }}
+            className="mt-6 space-y-4"
+          >
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider mb-2">
+                Sudo / Root Password
+              </label>
+              <input
+                type="password"
+                value={sudoPwInput}
+                onChange={(e) => setSudoPwInput(e.target.value)}
+                placeholder="••••••••••••••"
+                autoFocus
+                className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-650 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-mono transition"
+              />
+            </div>
+
+            <div className="flex items-center gap-2.5 px-1 py-1">
+              <input
+                id="rememberPw"
+                type="checkbox"
+                checked={rememberPw}
+                onChange={(e) => setRememberPw(e.target.checked)}
+                className="rounded border-zinc-700 bg-zinc-800 text-cyan-500 focus:ring-cyan-500 h-4 w-4 cursor-pointer"
+              />
+              <label htmlFor="rememberPw" className="text-xs text-zinc-400 font-sans cursor-pointer select-none">
+                Remember for this application session
+              </label>
+            </div>
+
+            <div className="flex gap-2.5 pt-3">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 text-zinc-950 font-bold py-2.5 text-xs hover:opacity-90 transition cursor-pointer font-mono"
+              >
+                Authenticate & Build
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md select-none">
@@ -293,13 +388,44 @@ export default function BuildProgressModal({
                 <p className="mt-1 font-bold text-slate-200 text-[12px] leading-relaxed">
                   Installing system dependencies requires administrative privileges (<code className="bg-black/40 px-1 py-0.25 rounded text-amber-300">sudo</code>).
                 </p>
-                <div className="mt-3 bg-black/60 border border-white/5 rounded-lg p-3 text-slate-300 text-[11px] leading-relaxed space-y-1.5">
+                <div className="mt-3 bg-black/60 border border-white/5 rounded-lg p-3 text-slate-300 text-[11px] leading-relaxed space-y-2">
                   <p>
-                    👉 <strong>IMPORTANT NOTICE:</strong> Please open the <strong>terminal window/command prompt/console</strong> from which you launched this application process (or check your hosting workspace), and input your <strong>system administrator/sudo password</strong>.
+                    👉 <strong>IMPORTANT NOTICE:</strong> Sudo is waiting for authorization. Enter your password in the interactive credentials input below, or enter it inside the console from which you booted the server:
                   </p>
-                  <p className="text-[10px] text-amber-400/90 flex items-center gap-1.5">
+                  <form 
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const pwVal = (e.currentTarget.elements.namedItem("inlinePassword") as HTMLInputElement).value;
+                      if (pwVal) {
+                        try {
+                          await fetch("/api/system/sudo-auth", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ name: pkgName, password: pwVal })
+                          });
+                        } catch (err) {
+                          console.error("Failed to forward credentials:", err);
+                        }
+                      }
+                    }}
+                    className="flex gap-2 items-center mt-2.5"
+                  >
+                    <input
+                      name="inlinePassword"
+                      type="password"
+                      placeholder="••••••••"
+                      className="bg-zinc-900 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono w-48"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-bold px-3 py-1 rounded-lg text-[10px] uppercase font-mono transition cursor-pointer"
+                    >
+                      Authorize
+                    </button>
+                  </form>
+                  <p className="text-[10px] text-amber-400/90 flex items-center gap-1.5 pt-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-                    For direct host environment security, the password cannot be captured via browser inputs.
+                    Interactive inputs will automatically forward securely to the active system session.
                   </p>
                 </div>
               </div>

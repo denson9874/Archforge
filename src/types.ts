@@ -17,6 +17,7 @@ export interface InstalledPackage {
 }
 
 export interface SystemStats {
+  isRealArch?: boolean;
   totals: {
     all: number;
     aur: number;

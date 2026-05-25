@@ -41,6 +41,59 @@ const execSync = (cmd: string, options?: any) => {
 
 const execAsync = promisify(exec) as unknown as (cmd: string, options?: any) => Promise<{ stdout: string; stderr: string }>;
 
+// Store active child processes to dynamically supply terminal inputs (like sudo passwords)
+const activeProcesses = new Map<string, any>();
+
+async function createSecureSudoWrapper(password: string) {
+  if (!password) {
+    return { wrapperPath: null, cleanup: async () => {} };
+  }
+  const id = Math.random().toString(36).substring(2, 10);
+  const wrapperDir = path.join(os.tmpdir(), `archforge-auth-${id}`);
+  await fs.promises.mkdir(wrapperDir, { recursive: true });
+
+  const pwFile = path.join(wrapperDir, ".pw");
+  await fs.promises.writeFile(pwFile, password, { mode: 0o600 });
+
+  const sudoContent = `#!/bin/sh
+if [ -f "${pwFile}" ]; then
+  /usr/bin/sudo -S "$@" < "${pwFile}"
+else
+  /usr/bin/sudo "$@"
+fi
+`;
+
+  const pkexecContent = `#!/bin/sh
+if [ -f "${pwFile}" ]; then
+  /usr/bin/sudo -S "$@" < "${pwFile}"
+else
+  /usr/bin/sudo "$@"
+fi
+`;
+
+  await fs.promises.writeFile(path.join(wrapperDir, "sudo"), sudoContent, { mode: 0o700 });
+  await fs.promises.writeFile(path.join(wrapperDir, "pkexec"), pkexecContent, { mode: 0o700 });
+
+  const cleanup = async () => {
+    try {
+      if (fs.existsSync(pwFile)) {
+        await fs.promises.unlink(pwFile);
+      }
+      if (fs.existsSync(path.join(wrapperDir, "sudo"))) {
+        await fs.promises.unlink(path.join(wrapperDir, "sudo"));
+      }
+      if (fs.existsSync(path.join(wrapperDir, "pkexec"))) {
+        await fs.promises.unlink(path.join(wrapperDir, "pkexec"));
+      }
+      await fs.promises.rmdir(wrapperDir);
+    } catch (e) {
+      console.error("Cleanup failed for authorization wrappers:", e);
+    }
+  };
+
+  return { wrapperPath: wrapperDir, cleanup };
+}
+
 // Interfaces
 interface InstalledPackage {
   name: string;
@@ -375,13 +428,20 @@ let installedPackages: InstalledPackage[] = [
 
 // Synchronously detect if pacman binary toolchain is present on the current host machine prior to any request dispatch
 try {
-  execSync("which pacman");
-  isRealArch = true;
-  console.log("==========================================================");
-  console.log("🔥 BARE-METAL ARCH LINUX CORE DETECTED!");
-  console.log("ArchForge has unlocked real system pacman / makepkg access.");
-  console.log("Direct bare-metal package operations are active.");
-  console.log("==========================================================");
+  if (fs.existsSync("/usr/bin/pacman") || fs.existsSync("/bin/pacman")) {
+    isRealArch = true;
+  } else {
+    execSync("which pacman");
+    isRealArch = true;
+  }
+  
+  if (isRealArch) {
+    console.log("==========================================================");
+    console.log("🔥 BARE-METAL ARCH LINUX CORE DETECTED!");
+    console.log("ArchForge has unlocked real system pacman / makepkg access.");
+    console.log("Direct bare-metal package operations are active.");
+    console.log("==========================================================");
+  }
 } catch {
   isRealArch = false;
   console.log("==========================================================");
@@ -472,7 +532,7 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
     // Determine foreign packages (e.g. AUR wrappers or local makepkg builds)
     const foreignSet = new Set<string>();
     try {
-      const { stdout: mOut } = await execAsync("pacman -Qm");
+      const { stdout: mOut } = await execAsync("LC_ALL=C pacman -Qm");
       mOut.trim().split("\n").forEach(line => {
         const parts = line.split(/\s+/);
         if (parts[0]) foreignSet.add(parts[0].toLowerCase());
@@ -480,7 +540,7 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
     } catch {}
 
     // Parse the entire local system database via pacman -Qi
-    const { stdout } = await execAsync("pacman -Qi");
+    const { stdout } = await execAsync("LC_ALL=C pacman -Qi");
     const blocks = stdout.split(/\n(?=Name\s+:)/);
     const parsedPkgs: InstalledPackage[] = [];
 
@@ -525,8 +585,8 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
     lastCacheUpdate = now;
     return parsedPkgs;
   } catch (err) {
-    console.error("Failed parsing real pacman library output, using fallback simulated cache:", err);
-    return installedPackages;
+    console.error("Failed parsing real pacman library output:", err);
+    return isRealArch ? [] : installedPackages;
   }
 }
 
@@ -607,21 +667,34 @@ async function startServer() {
 
   // 3. Uninstall Package (Real host purger if on Arch)
   app.post("/api/packages/uninstall", async (req, res) => {
-    const { name } = req.body;
+    const { name, pw } = req.body;
     if (!name) {
       return res.status(400).json({ error: "Package name is required" });
     }
 
     if (isRealArch) {
+      let wrapper: any = null;
       try {
-        console.log(`[ArchForge] Invoking pkexec to uninstall ${name}...`);
-        await execAsync(`pkexec pacman -Rns --noconfirm ${name}`);
+        console.log(`[ArchForge] Invoking pkexec/sudo to uninstall ${name}...`);
+        let execOpts: any = {};
+        if (pw) {
+          wrapper = await createSecureSudoWrapper(pw);
+          const cleanEnv = getCleanEnv();
+          execOpts.env = {
+            PATH: `${wrapper.wrapperPath}:${cleanEnv.PATH || ""}`
+          };
+        }
+        await execAsync(`pkexec pacman -Rns --noconfirm ${name}`, execOpts);
         cachedPackages = [];
         lastCacheUpdate = 0;
         return res.json({ success: true, message: `Host package uninstalled successfully.` });
       } catch (err: any) {
         console.error(`[ArchForge] Uninstallation failed:`, err);
         return res.status(500).json({ error: `GUI Privilege escalation or package removal failed: ${err.message}` });
+      } finally {
+        if (wrapper) {
+          await wrapper.cleanup();
+        }
       }
     }
 
@@ -820,9 +893,18 @@ async function startServer() {
         iconBuffer = Buffer.from(arrayBuffer);
         await fs.promises.writeFile(localIconPath, iconBuffer);
       } catch (err) {
-        const srcIcon = path.join(__dirname, "archforge.png");
-        if (fs.existsSync(srcIcon)) {
-          iconBuffer = await fs.promises.readFile(srcIcon);
+        const srcIconCandidates = [
+          path.join(__dirname, "archforge.png"),
+          path.join(__dirname, "..", "archforge.png"),
+          path.join(process.cwd(), "archforge.png")
+        ];
+        for (const candidate of srcIconCandidates) {
+          if (fs.existsSync(candidate)) {
+            iconBuffer = await fs.promises.readFile(candidate);
+            break;
+          }
+        }
+        if (iconBuffer) {
           await fs.promises.writeFile(localIconPath, iconBuffer);
         } else {
           iconBuffer = Buffer.alloc(0);
@@ -905,6 +987,7 @@ StartupWMClass=ArchForge
     const missingTools = await checkMissingHostTools();
 
     res.json({
+      isRealArch,
       totals: {
         all: totalInst,
         aur: aurCount,
@@ -924,9 +1007,26 @@ StartupWMClass=ArchForge
     });
   });
 
+  // Direct endpoint to forward interactive credentials to active terminal child proc
+  app.post("/api/system/sudo-auth", express.json(), (req, res) => {
+    const { name, password } = req.body;
+    if (!name || !password) {
+      return res.status(400).json({ error: "Package name and Sudo password are required" });
+    }
+    const proc = activeProcesses.get(name);
+    if (proc && proc.stdin) {
+      console.log(`[ArchForge Authenticator] Writing credentials to stdin for active process: ${name}`);
+      proc.stdin.write(password + "\n");
+      return res.json({ success: true, message: "Credentials successfully wrote to terminal stdin." });
+    } else {
+      return res.status(404).json({ error: "No active compilation session requires inline stdin root authorization." });
+    }
+  });
+
   // 6. Direct real-time stdout / stderr compilation stream via SSE protocol
   app.get("/api/packages/install/stream", async (req, res) => {
     const name = req.query.name as string;
+    const pw = req.query.pw as string;
     if (!name) {
       return res.status(400).write("Error: Package name is required");
     }
@@ -949,7 +1049,7 @@ StartupWMClass=ArchForge
         `==> Downloading sources for package ${name}...`,
         `  -> Cloning git workspace repository...`,
         `==> Validating integrity check-sums with SHA256 integrity checkers...`,
-        `  -> sha256sum: PASSED with zero build discrepancies`,
+        `  -> sha255sum: PASSED with zero build discrepancies`,
         `==> Launching multi-thread software build pipeline...`,
         `  -> Running build tools: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`,
         `  -> g++ -O3 -march=native -pipe -flto -shared -fPIC -pthread -o ${name} src/main.cpp`,
@@ -980,11 +1080,21 @@ StartupWMClass=ArchForge
       sendLine(`==> [ArchForge System Upgrade] Initializing full base-system upgrade...`);
       sendLine(`==> Authentication prompts may request permission to run system update operations.`);
       
+      let wrapper: any = null;
+      let customEnv: any = { ...process.env, FORCE_COLOR: "true" };
+      
+      if (pw) {
+        wrapper = await createSecureSudoWrapper(pw);
+        const cleanEnv = getCleanEnv();
+        customEnv.PATH = `${wrapper.wrapperPath}:${cleanEnv.PATH || ""}`;
+      }
+
       let executable = "pkexec";
       let execArgs = ["pacman", "-Syu", "--noconfirm"];
 
       sendLine(`==> Executing: ${executable} ${execArgs.join(" ")}`);
-      const upgradeProc = spawn(executable, execArgs, { env: { ...process.env, FORCE_COLOR: "true" } });
+      const upgradeProc = spawn(executable, execArgs, { env: customEnv });
+      activeProcesses.set("system-upgrade", upgradeProc);
 
       upgradeProc.stdout.on("data", (data) => {
         sendLine(data.toString().trim());
@@ -994,7 +1104,11 @@ StartupWMClass=ArchForge
         sendLine(data.toString().trim());
       });
 
-      upgradeProc.on("close", (exitCode) => {
+      upgradeProc.on("close", async (exitCode) => {
+        activeProcesses.delete("system-upgrade");
+        if (wrapper) {
+          await wrapper.cleanup();
+        }
         if (exitCode === 0) {
           sendLine(`==> [ArchForge] SYSTEM UPGRADE SUCCEEDED: System packages are fully upgraded!`);
         } else {
@@ -1040,49 +1154,77 @@ StartupWMClass=ArchForge
 
         // 3. Initiate makepkg -si --noconfirm compilation on actual Arch Linux platform userpace
         // Runs makepkg as the node child process owner (which runs with user privileges securely on host)
-        const makepkg = spawn("makepkg", ["-si", "--noconfirm", "--needed"], { 
+        let wrapper: any = null;
+        let authOpts: any = {
           cwd: buildWorkspace,
-          env: { ...process.env, SUDO: "pkexec" }
-        });
+          env: { ...process.env }
+        };
 
-        let hasFakerootError = false;
-
-        makepkg.stdout.on("data", (data) => {
-          const text = data.toString();
-          if (text.toLowerCase().includes("fakeroot")) {
-            hasFakerootError = true;
+        if (pw) {
+          try {
+            createSecureSudoWrapper(pw).then(w => {
+              wrapper = w;
+              const cleanEnv = getCleanEnv();
+              authOpts.env.PATH = `${w.wrapperPath}:${cleanEnv.PATH || ""}`;
+              authOpts.env.SUDO = "sudo";
+              launchMakepkg();
+            });
+          } catch (e) {
+            authOpts.env.SUDO = "pkexec";
+            launchMakepkg();
           }
-          sendLine(text.trim());
-        });
+        } else {
+          authOpts.env.SUDO = "pkexec";
+          launchMakepkg();
+        }
 
-        makepkg.stderr.on("data", (data) => {
-          const text = data.toString();
-          if (text.toLowerCase().includes("fakeroot")) {
-            hasFakerootError = true;
-          }
-          sendLine(text.trim());
-        });
+        function launchMakepkg() {
+          const makepkg = spawn("makepkg", ["-si", "--noconfirm", "--needed"], authOpts);
+          activeProcesses.set(name, makepkg);
 
-        makepkg.on("close", (exitCode) => {
-          if (exitCode === 0) {
-            sendLine(`==> [ArchForge] COMPILATION SUCCEEDED: Package '${name}' registered successfully on bare-metal database!`);
-          } else {
-            sendLine(`error: AUR build makepkg exited with error code: ${exitCode}`);
-            if (hasFakerootError || exitCode === 15) {
-              sendLine("");
-              sendLine(`💡 [ArchForge Help: Environment Setup Needed]`);
-              sendLine(`It appears your Arch Linux installation is missing essential compilation tools (like fakeroot).`);
-              sendLine(`To enable package building from AUR source trees, install the core development package suite:`);
-              sendLine(`👉  sudo pacman -S --needed base-devel`);
-              sendLine("");
+          let hasFakerootError = false;
+
+          makepkg.stdout.on("data", (data) => {
+            const text = data.toString();
+            if (text.toLowerCase().includes("fakeroot")) {
+              hasFakerootError = true;
             }
-          }
-          // Clear memory cache so that installed lists are updated immediately
-          cachedPackages = [];
-          lastCacheUpdate = 0;
-          res.write("event: end\ndata: \n\n");
-          res.end();
-        });
+            sendLine(text.trim());
+          });
+
+          makepkg.stderr.on("data", (data) => {
+            const text = data.toString();
+            if (text.toLowerCase().includes("fakeroot")) {
+              hasFakerootError = true;
+            }
+            sendLine(text.trim());
+          });
+
+          makepkg.on("close", async (exitCode) => {
+            activeProcesses.delete(name);
+            if (wrapper) {
+              await wrapper.cleanup();
+            }
+            if (exitCode === 0) {
+              sendLine(`==> [ArchForge] COMPILATION SUCCEEDED: Package '${name}' registered successfully on bare-metal database!`);
+            } else {
+              sendLine(`error: AUR build makepkg exited with error code: ${exitCode}`);
+              if (hasFakerootError || exitCode === 15) {
+                sendLine("");
+                sendLine(`💡 [ArchForge Help: Environment Setup Needed]`);
+                sendLine(`It appears your Arch Linux installation is missing essential compilation tools (like fakeroot).`);
+                sendLine(`To enable package building from AUR source trees, install the core development package suite:`);
+                sendLine(`👉  sudo pacman -S --needed base-devel`);
+                sendLine("");
+              }
+            }
+            // Clear memory cache so that installed lists are updated immediately
+            cachedPackages = [];
+            lastCacheUpdate = 0;
+            res.write("event: end\ndata: \n\n");
+            res.end();
+          });
+        }
       });
     } catch (e: any) {
       sendLine(`error: Internal toolchain execution fault: ${e.message}`);
