@@ -97,7 +97,7 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
 
   useEffect(() => {
     fetchResults();
-  }, [debouncedQuery]);
+  }, [debouncedQuery, indexStatus.indexedCount]);
 
   // Filters results locally according to active tabs
   const filteredResults = results.filter(pkg => {

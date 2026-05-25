@@ -64,7 +64,7 @@ EOF
 
 # 5. Fetch/Create Sleek AppIcon
 echo "==> Fetching sleek packaging icon for ArchForge..."
-curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/2919/2919598.png" || {
+curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/9356/9356230.png" || {
   echo "⚠️ Failed downloading icon from backup Flaticon CDN; generating a fallback visual placeholder instead..."
   touch "${APPDIR}/archforge.png"
 }
@@ -134,6 +134,22 @@ function performDesktopIntegration() {
     const embeddedIcon = path.join(__dirname, 'archforge.png');
     if (fs.existsSync(embeddedIcon)) {
       fs.copyFileSync(embeddedIcon, iconPath);
+      const iconPathsToPopulate = [
+        path.join(homeDir, ".icons", "archforge.png"),
+        path.join(homeDir, ".local/share/icons/hicolor/48x48/apps/archforge.png"),
+        path.join(homeDir, ".local/share/icons/hicolor/256x256/apps/archforge.png"),
+        path.join(homeDir, ".local/share/icons/hicolor/512x512/apps/archforge.png"),
+      ];
+      for (const p of iconPathsToPopulate) {
+        try {
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.copyFileSync(embeddedIcon, p);
+        } catch (_) {}
+      }
+      try {
+        execSync(`gtk-update-icon-cache -f ${path.join(homeDir, ".local/share/icons/hicolor")}`, { stdio: 'ignore' });
+        execSync(`gtk-update-icon-cache -f ${path.join(homeDir, ".icons")}`, { stdio: 'ignore' });
+      } catch (_) {}
     }
 
     const execCmd = isAppImage ? targetAppPath : currentBinary;

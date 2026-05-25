@@ -119,6 +119,14 @@ export default function App() {
   // Local utility filter state
   const [instFilter, setInstFilter] = useState<"all" | "aur" | "official" | "unstable">("all");
 
+  // Local system packages pagination
+  const [localPage, setLocalPage] = useState<number>(1);
+  const localItemsPerPage = 6;
+
+  useEffect(() => {
+    setLocalPage(1);
+  }, [instFilter]);
+
   // Dashboard Integrity Diagnostics Verification
   const [verifyingPkgName, setVerifyingPkgName] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<any | null>(null);
@@ -465,6 +473,13 @@ export default function App() {
     if (instFilter === "unstable") return pkg.health === "warning" || pkg.health === "error";
     return true;
   });
+
+  // Paginate local packages
+  const totalLocalPages = Math.ceil(filteredInstalledPackages.length / localItemsPerPage);
+  const paginatedInstalledPackages = filteredInstalledPackages.slice(
+    (localPage - 1) * localItemsPerPage,
+    localPage * localItemsPerPage
+  );
 
   const activePreset = THEME_PRESETS.find(p => p.id === themeOption) || THEME_PRESETS[0];
   const orbs = activePreset.orbs;
@@ -920,7 +935,7 @@ export default function App() {
                 {/* Grid listing installed items */}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {filteredInstalledPackages.length > 0 ? (
-                    filteredInstalledPackages.map((pkg) => (
+                    paginatedInstalledPackages.map((pkg) => (
                       <div
                         key={pkg.name}
                         onClick={() => handleSelectPackage(pkg.name, pkg.repo === "aur")}
@@ -1006,6 +1021,36 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                {/* Local Packages Pagination */}
+                {totalLocalPages > 1 && (
+                  <div className="flex items-center justify-between border-t border-white/5 pt-4 mt-2">
+                    <span className="text-xs text-slate-400 font-mono">
+                      Showing <span className="text-cyan-400 font-bold">{(localPage - 1) * localItemsPerPage + 1}</span>-
+                      <span className="text-cyan-400 font-bold">{Math.min(localPage * localItemsPerPage, filteredInstalledPackages.length)}</span> of{" "}
+                      <span className="text-cyan-400 font-bold">{filteredInstalledPackages.length}</span> Local Packages
+                    </span>
+                    <div className="flex items-center gap-1.5 font-mono">
+                      <button
+                        onClick={() => setLocalPage(prev => Math.max(prev - 1, 1))}
+                        disabled={localPage === 1}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-white disabled:opacity-40 disabled:hover:bg-white/[0.02] disabled:hover:text-slate-400 cursor-pointer disabled:cursor-not-allowed transition"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-[11px] text-zinc-300 font-bold px-3 py-1 bg-white/[0.03] border border-white/5 rounded-lg">
+                        Page {localPage} of {totalLocalPages}
+                      </span>
+                      <button
+                        onClick={() => setLocalPage(prev => Math.min(prev + 1, totalLocalPages))}
+                        disabled={localPage === totalLocalPages}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-white disabled:opacity-40 disabled:hover:bg-white/[0.02] disabled:hover:text-slate-400 cursor-pointer disabled:cursor-not-allowed transition"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
 
