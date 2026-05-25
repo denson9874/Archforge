@@ -43,8 +43,8 @@ echo "==> Creating custom AppRun entry point binary..."
 cat << 'EOF' > "${APPDIR}/AppRun"
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-# Run standalone Electron directly, forwarding all system commandline parameters (e.g., --no-sandbox)
-exec "${HERE}/electron" "$@"
+# Run standalone Electron directly, forwarding ozone native flags and forwarding all system user parameters
+exec "${HERE}/electron" --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer "$@"
 EOF
 chmod +x "${APPDIR}/AppRun"
 
@@ -52,13 +52,14 @@ chmod +x "${APPDIR}/AppRun"
 echo "==> Creating Desktop launcher description..."
 cat << 'EOF' > "${APPDIR}/archforge.desktop"
 [Desktop Entry]
-Name=ArchForge
-Exec=AppRun
-Icon=archforge
 Type=Application
-Categories=System;Utility;
-Comment=Bare-metal Arch Linux package and AUR repository manager.
+Name=ArchForge Manager
+Exec=AppRun --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
+Icon=archforge
+Comment=Bare-metal Arch Linux package and AUR repository manager
+Categories=System;Utility;Settings;PackageManager;
 Terminal=false
+StartupWMClass=ArchForge
 EOF
 
 # 5. Fetch/Create Sleek AppIcon
@@ -138,7 +139,7 @@ function performDesktopIntegration() {
     const desktopTemplate = `[Desktop Entry]
 Type=Application
 Name=ArchForge Manager
-Exec=${execCmd} --no-sandbox %U
+Exec=${execCmd} --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
 Icon=${iconPath}
 Comment=Bare-metal Arch Linux package and AUR repository manager
 Categories=System;Utility;Settings;PackageManager;

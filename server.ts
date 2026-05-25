@@ -767,7 +767,7 @@ async function startServer() {
       const desktopTemplate = `[Desktop Entry]
 Type=Application
 Name=ArchForge Manager
-Exec=${targetPath} --no-sandbox %U
+Exec=${targetPath} --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
 Icon=${localIconPath}
 Comment=Bare-metal Arch Linux package and AUR repository manager
 Categories=System;Utility;Settings;PackageManager;
