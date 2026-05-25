@@ -1146,6 +1146,13 @@ StartupWMClass=ArchForge
 
     try {
       // 1. Clean and configure fresh temporary build directory on root filesystem
+      if (fs.existsSync(buildWorkspace)) {
+        try {
+          await fs.promises.rm(buildWorkspace, { recursive: true, force: true });
+        } catch (e) {
+          console.warn(`[ArchForge Builder] Could not fully rm transient folder ${buildWorkspace}:`, e);
+        }
+      }
       await fs.promises.mkdir(buildWorkspace, { recursive: true });
       sendLine(`==> Initiated secure build environment directory at ${buildWorkspace}`);
 

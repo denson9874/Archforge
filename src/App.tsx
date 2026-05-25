@@ -34,11 +34,12 @@ import PackageExplorer from "./components/PackageExplorer";
 import PackageDetailDrawer from "./components/PackageDetailDrawer";
 import BuildProgressModal from "./components/BuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
+import AICopilot from "./components/AICopilot";
 
 export default function App() {
   const [installedPackages, setInstalledPackages] = useState<InstalledPackage[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli" | "ai">("dashboard");
 
   // Theme & Custom Accent Color States
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
@@ -431,11 +432,12 @@ export default function App() {
         {/* Outer Tab control links with glass-pill theme and Settings toggle button */}
         <div className="flex items-center gap-2">
           <div className="flex gap-1.5 glass-pill-container p-1 rounded-xl">
-            {(["dashboard", "explore", "cli"] as const).map((tab) => {
+            {(["dashboard", "explore", "cli", "ai"] as const).map((tab) => {
               const icons = {
                 dashboard: <Activity className="h-4 w-4" />,
                 explore: <Search className="h-4 w-4" />,
-                cli: <TerminalIcon className="h-4 w-4" />
+                cli: <TerminalIcon className="h-4 w-4" />,
+                ai: <Sparkles className="h-4 w-4 text-cyan-400" />
               };
               return (
                 <button
@@ -978,6 +980,18 @@ export default function App() {
                   onRunSyu={handleSyuTrigger}
                   installedPackages={installedPackages}
                 />
+              </motion.div>
+            )}
+
+            {activeTab === "ai" && (
+              <motion.div
+                key="ai"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.15 }}
+              >
+                <AICopilot />
               </motion.div>
             )}
           </AnimatePresence>
