@@ -716,6 +716,18 @@ class StandaloneRouter(BaseHTTPRequestHandler):
             self.send_error(500, f"Internal Server Error: {str(e)}")
 
     def do_GET(self):
+        try:
+            self._do_GET_impl()
+        except Exception as e:
+            import traceback
+            print("Unhandled GET exception:", e)
+            traceback.print_exc()
+            try:
+                self.send_error_json(500, f"Internal routing server exception: {str(e)}")
+            except Exception:
+                pass
+
+    def _do_GET_impl(self):
         global aur_database_index, aur_database_map, is_indexing, last_index_time
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -814,7 +826,13 @@ class StandaloneRouter(BaseHTTPRequestHandler):
             with aur_index_lock:
                 if len(q_val) >= 2:
                     q_low = q_val.lower()
-                    local_matches = [x for x in aur_database_index if q_low in x.get("Name", "").lower() or q_low in x.get("Description", "").lower()]
+                    local_matches = [
+                        x for x in aur_database_index 
+                        if x and (
+                            q_low in (x.get("Name") or "").lower() or 
+                            q_low in (x.get("Description") or "").lower()
+                        )
+                    ]
                 elif not q_val or q_val.strip() == "":
                     self.send_json({"results": list(aur_database_index)})
                     return
@@ -840,6 +858,8 @@ class StandaloneRouter(BaseHTTPRequestHandler):
                 with aur_index_lock:
                     index_modified = False
                     for item in live_results:
+                        if not item:
+                            continue
                         name = item.get("Name")
                         if not name:
                             continue
@@ -875,22 +895,31 @@ class StandaloneRouter(BaseHTTPRequestHandler):
                 # Merge lists
                 merged_map = {}
                 for p in local_matches:
-                    merged_map[p["Name"].lower()] = p
+                    if p and p.get("Name"):
+                        p_name_low = p["Name"].lower()
+                        merged_map[p_name_low] = p
                 for p in live_results:
-                    merged_map[p["Name"].lower()] = {
-                        "Name": p["Name"],
-                        "Version": p.get("Version"),
-                        "Description": p.get("Description"),
-                        "NumVotes": p.get("NumVotes", 0),
-                        "Popularity": p.get("Popularity", 0.0),
-                        "LastModified": p.get("LastModified", int(time.time()) - 2 * 24 * 3600),
-                        "Maintainer": p.get("Maintainer", "orphan"),
-                        "URL": p.get("URL")
-                    }
+                    if p and p.get("Name"):
+                        p_name_low = p["Name"].lower()
+                        merged_map[p_name_low] = {
+                            "Name": p["Name"],
+                            "Version": p.get("Version"),
+                            "Description": p.get("Description"),
+                            "NumVotes": p.get("NumVotes", 0),
+                            "Popularity": p.get("Popularity", 0.0),
+                            "LastModified": p.get("LastModified", int(time.time()) - 2 * 24 * 3600),
+                            "Maintainer": p.get("Maintainer", "orphan"),
+                            "URL": p.get("URL")
+                        }
                 self.send_json({"results": list(merged_map.values())})
             except Exception as e:
                 print("AUR RPC Search Exception in Python (using local matches):", e)
-                self.send_json({"results": local_matches})
+                # Extra safety check on local matches names as well
+                safe_local = []
+                for p in local_matches:
+                    if p and p.get("Name"):
+                        safe_local.append(p)
+                self.send_json({"results": safe_local})
 
         elif path == "/api/aur/index/status":
             with aur_index_lock:
@@ -1006,6 +1035,18 @@ package() {{
             self.send_error_json(404, "API endpoint not found")
 
     def do_POST(self):
+        try:
+            self._do_POST_impl()
+        except Exception as e:
+            import traceback
+            print("Unhandled POST exception:", e)
+            traceback.print_exc()
+            try:
+                self.send_error_json(500, f"Internal routing server exception: {str(e)}")
+            except Exception:
+                pass
+
+    def _do_POST_impl(self):
         global aur_database_index, is_indexing, last_index_time, cached_packages, last_cache_update
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -1205,39 +1246,53 @@ package() {{
                     shutil.copyfile(current_binary, target_path)
                     os.chmod(target_path, 0o755)
                     
-                local_icon_path = os.path.join(icon_dir, "archforge.png")
-                icon_buffer = b""
+                local_icon_path = os.path.join(icon_dir, "archforge.svg")
+                logo_content = b""
                 try:
-                    url = "https://cdn-icons-png.flaticon.com/512/9356/9356230.png"
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    workspace_logo_path = os.path.join(os.getcwd(), "archforge_logo.svg")
+                    if os.path.exists(workspace_logo_path):
+                        with open(workspace_logo_path, "rb") as lf:
+                            logo_content = lf.read()
+                    else:
+                        print("[ArchForge Python Installer] Warn: archforge_logo.svg not found in directory root.")
+                except Exception as e:
+                    print("[ArchForge Python Installer] Err: failed reading archforge_logo.svg from source:", e)
+
+                if logo_content:
+                    with open(local_icon_path, "wb") as f_icon:
+                        f_icon.write(logo_content)
+                else:
+                    # Write blank fallback if not found
+                    with open(local_icon_path, "wb") as f_icon:
+                        f_icon.write(b"")
+
+                # Clean up any legacy or stale png icons to avoid desktop managers preferring stale png references
+                old_png_paths = [
+                    os.path.join(icon_dir, "archforge.png"),
+                    os.path.join(home_dir, ".icons", "archforge.png"),
+                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archforge.png"),
+                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "256x256", "apps", "archforge.png"),
+                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "512x512", "apps", "archforge.png"),
+                ]
+                for old_png in old_png_paths:
                     try:
-                        with urllib.request.urlopen(req, timeout=5) as resp:
-                            icon_buffer = resp.read()
+                        if os.path.exists(old_png):
+                            os.remove(old_png)
                     except Exception:
-                        import ssl
-                        ctx = ssl._create_unverified_context()
-                        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
-                            icon_buffer = resp.read()
-                    with open(local_icon_path, "wb") as f:
-                        f.write(icon_buffer)
-                except Exception:
-                    # Write blank or existing fallback
-                    with open(local_icon_path, "wb") as f:
-                        f.write(b"")
+                        pass
                         
-                # Copy icon into multiple standard GTK themes directories to overwrite old icon cached states
-                if icon_buffer and len(icon_buffer) > 0:
+                # Copy scalable SVG icon into multiple standard GTK themes directories to ensure DE cache updates
+                if logo_content and len(logo_content) > 0:
                     icon_paths_to_populate = [
-                        os.path.join(home_dir, ".icons", "archforge.png"),
-                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archforge.png"),
-                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "256x256", "apps", "archforge.png"),
-                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "512x512", "apps", "archforge.png"),
+                        os.path.join(home_dir, ".icons", "archforge.svg"),
+                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "scalable", "apps", "archforge.svg"),
+                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archforge.svg"),
                     ]
                     for path_to_write in icon_paths_to_populate:
                         try:
                             os.makedirs(os.path.dirname(path_to_write), exist_ok=True)
                             with open(path_to_write, "wb") as f:
-                                f.write(icon_buffer)
+                                f.write(logo_content)
                         except Exception as e:
                             print(f"[ArchForge Python Installer] Warn: could not write icon to {path_to_write}: {e}")
                             
@@ -1253,7 +1308,7 @@ package() {{
                 except Exception:
                     pass
 
-                # Create desktop file
+                # Create desktop file with path pointing to the custom vector icon
                 desktop_file_path = os.path.join(applications_dir, "archforge.desktop")
                 desktop_template = f"""[Desktop Entry]
 Type=Application
@@ -1270,7 +1325,7 @@ StartupWMClass=ArchForge
                     
                 self.send_json({
                     "success": True,
-                    "message": "Successfully installed ArchForge Manager launcher in standalone layout!",
+                    "message": "Successfully installed ArchForge Manager launcher inside your environment!",
                     "desktopPath": desktop_file_path,
                     "executablePath": target_path,
                     "iconPath": local_icon_path

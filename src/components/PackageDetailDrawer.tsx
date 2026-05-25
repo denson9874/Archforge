@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Globe, Download, Trash, BookOpen, Clock, GitCommit, FileText, ChevronRight, Share2, CornerDownLeft, ShieldCheck, AlertCircle } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { AurSearchResult, InstalledPackage } from "../types";
 
 interface PackageDetailDrawerProps {
@@ -144,10 +145,18 @@ export default function PackageDetailDrawer({
           </div>
 
           {/* Tab Pages Workspace */}
-          <div className="flex-1 overflow-y-auto max-h-[300px] mt-4 pr-1 space-y-4 text-xs glass-scrollbar">
-            {viewMode === "details" && (
-              <div className="space-y-4">
-                {/* Meta details list */}
+          <div className="flex-1 overflow-y-auto max-h-[300px] mt-4 pr-1 text-xs glass-scrollbar">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={viewMode}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+              >
+                {viewMode === "details" && (
+                  <div className="space-y-4">
+                    {/* Meta details list */}
                 <div className="grid grid-cols-2 gap-3.5 bg-white/3 p-3 rounded-lg border border-white/5 font-mono">
                   <div>
                     <span className="text-zinc-500 block text-[10px] uppercase">Official Version</span>
@@ -309,6 +318,8 @@ export default function PackageDetailDrawer({
                 </div>
               </div>
             )}
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           {/* Action Footer Button Group */}

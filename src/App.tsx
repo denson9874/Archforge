@@ -33,9 +33,11 @@ import TerminalCLI from "./components/TerminalCLI";
 import PackageExplorer from "./components/PackageExplorer";
 import PackageDetailDrawer from "./components/PackageDetailDrawer";
 import BuildProgressModal from "./components/BuildProgressModal";
+import BatchBuildProgressModal from "./components/BatchBuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
 import AICopilot from "./components/AICopilot";
 import ArchForgeLogo from "./components/ArchForgeLogo";
+import { playCompilationSuccessSound } from "./utils/audioHelper";
 
 interface ThemePreset {
   id: "classic" | "matrix" | "cyberpunk" | "nordic" | "warm-autumn";
@@ -113,6 +115,7 @@ export default function App() {
 
   // Installer build modal states
   const [compilingPackage, setCompilingPackage] = useState<any | null>(null);
+  const [compilingBatchList, setCompilingBatchList] = useState<any[] | null>(null);
   const [isSyuUpgrade, setIsSyuUpgrade] = useState<boolean>(false);
   const [selectedUpgradeNames, setSelectedUpgradeNames] = useState<string[]>([]);
   const [showUpgradeConfig, setShowUpgradeConfig] = useState<boolean>(false);
@@ -200,9 +203,8 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Only run theme detection at launch to ensure the application runs without hangs!
     detectGtkTheme();
-    const interval = setInterval(detectGtkTheme, 4000);
-    return () => clearInterval(interval);
   }, []);
 
   // Sync theme to document element
@@ -356,6 +358,9 @@ export default function App() {
       });
 
       if (res.ok) {
+        // Play subtle success chime
+        playCompilationSuccessSound();
+
         // Trigger automated verification integrity checks directly on dashboard!
         runDashboardPackageVerification(body.name);
         
@@ -1066,6 +1071,7 @@ export default function App() {
                 <PackageExplorer
                   onSelectPackage={handleSelectPackage}
                   installedPackages={installedPackages}
+                  onStartBatchCompilation={(pkgs) => setCompilingBatchList(pkgs)}
                 />
               </motion.div>
             )}
@@ -1136,6 +1142,18 @@ export default function App() {
              depends={compilingPackage.Depends || compilingPackage.depends || []}
              onComplete={handleCompilationSuccess}
              onCancel={() => setCompilingPackage(null)}
+             isRealArch={stats?.isRealArch}
+          />
+        )}
+
+        {compilingBatchList && (
+          <BatchBuildProgressModal
+             packages={compilingBatchList}
+             onComplete={async () => {
+               await refreshSystemData(true);
+               setCompilingBatchList(null);
+             }}
+             onCancel={() => setCompilingBatchList(null)}
              isRealArch={stats?.isRealArch}
           />
         )}

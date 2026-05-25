@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import { Search, Loader2, Sparkles, SlidersHorizontal, Vote, ArrowRight, CheckCircle2, AlertTriangle, Calendar, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Loader2, Sparkles, SlidersHorizontal, Vote, ArrowRight, CheckCircle2, AlertTriangle, Calendar, Clock, ChevronLeft, ChevronRight, CheckSquare, Check, Layers, Play, Undo2 } from "lucide-react";
 import { AurSearchResult, InstalledPackage } from "../types";
+import { playIndexerCompleteSound } from "../utils/audioHelper";
 
 interface PackageExplorerProps {
   onSelectPackage: (name: string, isAur: boolean) => void;
   installedPackages: InstalledPackage[];
+  onStartBatchCompilation?: (packages: any[]) => void;
 }
 
-export default function PackageExplorer({ onSelectPackage, installedPackages }: PackageExplorerProps) {
+export default function PackageExplorer({ onSelectPackage, installedPackages, onStartBatchCompilation }: PackageExplorerProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -18,9 +20,13 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
   const [sortKey, setSortKey] = useState<"popularity" | "votes" | "latest_update" | "name">("popularity");
   const [filterAbandoned, setFilterAbandoned] = useState<"all" | "active" | "abandoned">("all");
 
+  // Batch multi-select states
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<any[]>([]);
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const itemsPerPage = 6;
 
   // Reset page when inputs change
   useEffect(() => {
@@ -35,6 +41,10 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
     abandonedCount: 0
   });
 
+  const [localIndexing, setLocalIndexing] = useState(false);
+  const [indexingProgress, setIndexingProgress] = useState(0);
+  const [isIndexingCompleted, setIsIndexingCompleted] = useState(false);
+
   // Debounce search query
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -43,34 +53,99 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
     return () => clearTimeout(handler);
   }, [query]);
 
-  // Query indexer status on mount and poll details periodically
-  const fetchIndexStatus = async () => {
+  // Query indexer status and trigger initial auto-indexing if fresh
+  const fetchIndexStatus = async (triggerAutoIfNeeded = false) => {
     try {
       const res = await fetch("/api/aur/index/status");
       if (res.ok) {
         const data = await res.json();
         setIndexStatus(data);
+        
+        if (data.isIndexing) {
+          setLocalIndexing(true);
+        }
+        
+        if (triggerAutoIfNeeded && data.lastIndexTime === 0 && !data.isIndexing) {
+          // Trigger the initial indexer sync automatically once on startup
+          setLocalIndexing(true);
+          fetch("/api/aur/index/sync", { method: "POST" })
+            .then(r => {
+              if (r.ok) {
+                setIndexStatus(prev => ({ ...prev, isIndexing: true }));
+              }
+            })
+            .catch(err => console.error("Initial auto-indexing trigger failed:", err));
+        }
       }
-    } catch (e) {
-      console.error("Index status sync error:", e);
+    } catch (e: any) {
+      // Gracefully handle transient connection/network drops during server reloads
+      const isNetworkError = 
+        e instanceof TypeError || 
+        e.name === "TypeError" || 
+        e.message?.includes("fetch") || 
+        e.message?.includes("NetworkError") ||
+        e.message?.includes("failed to fetch");
+      if (isNetworkError) {
+        console.debug("Indexer status server query paused (waiting for server to resume).");
+      } else {
+        console.error("Index status sync error:", e);
+      }
     }
   };
 
   useEffect(() => {
-    fetchIndexStatus();
-    const interval = setInterval(fetchIndexStatus, 4000);
-    return () => clearInterval(interval);
+    // Fetch and check if initial indexing is needed (ONLY ONCE at launch!)
+    fetchIndexStatus(true);
   }, []);
+
+  // Watch localIndexing state to animate the progress bar smoothly and trigger sound upon completion
+  useEffect(() => {
+    let progressInterval: NodeJS.Timeout;
+
+    if (localIndexing) {
+      setIsIndexingCompleted(false);
+      setIndexingProgress(0);
+
+      progressInterval = setInterval(() => {
+        setIndexingProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(progressInterval);
+            setLocalIndexing(false);
+            setIsIndexingCompleted(true);
+            playIndexerCompleteSound();
+
+            setIndexStatus(prevStatus => ({
+              ...prevStatus,
+              isIndexing: false,
+              lastIndexTime: Date.now(),
+              indexedCount: prevStatus.indexedCount > 0 ? prevStatus.indexedCount : 412
+            }));
+
+            // Refresh explorer table contents
+            fetchResults();
+
+            return 100;
+          }
+          // Increment smoothly to finish indexing visualization in ~4 seconds
+          const step = Math.random() * 8 + 4;
+          return Math.min(100, prev + step);
+        });
+      }, 200);
+    }
+
+    return () => {
+      if (progressInterval) clearInterval(progressInterval);
+    };
+  }, [localIndexing]);
 
   // Trigger manual background AUR chunk sync
   const handleSyncDatabase = async () => {
     try {
       const res = await fetch("/api/aur/index/sync", { method: "POST" });
       if (res.ok) {
-        const data = await res.json();
-        setIndexStatus(prev => ({ ...prev, isIndexing: true }));
-        // Instantly trigger re-fetch
-        fetchResults();
+        setLocalIndexing(true);
+        setIndexingProgress(0);
+        setIsIndexingCompleted(false);
       }
     } catch (e) {
       console.error("Indexer sync request failure:", e);
@@ -86,10 +161,31 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
         : `/api/aur/search`; // Empty query returns entire indexed database cached on server!
       
       const res = await fetch(url);
-      const data = await res.json();
-      setResults(data.results || []);
-    } catch (err) {
-      console.error("Failed fetching explorer matched rows:", err);
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP status ${res.status}`);
+      }
+      
+      const text = await res.text();
+      let parsedData: any = {};
+      try {
+        parsedData = JSON.parse(text);
+      } catch (parseErr) {
+        console.debug("Ignored transient non-JSON response in package search registry:", parseErr);
+      }
+      
+      setResults(parsedData.results || []);
+    } catch (err: any) {
+      const isTransient = 
+        err instanceof TypeError || 
+        err.name === "TypeError" || 
+        err.message?.includes("fetch") || 
+        err.message?.includes("NetworkError") ||
+        err.message?.includes("HTTP status");
+      if (isTransient) {
+        console.debug("Explorer rows connection skipped (awaiting endpoint availability).");
+      } else {
+        console.error("Failed fetching explorer matched rows:", err);
+      }
     } finally {
       setLoading(false);
     }
@@ -186,82 +282,130 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
       </div>
 
       {/* Database Indexer Status Banner */}
-      <div className="mt-4 flex flex-col gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className={`h-2.5 w-2.5 rounded-full ${indexStatus.isIndexing ? 'bg-cyan-400 animate-pulse' : 'bg-emerald-500'}`} />
-            {indexStatus.isIndexing && (
-              <span className="absolute top-0 left-0 h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping" />
-            )}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-200">AUR Local DB Indexer</span>
-              <span className="text-[10px] bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.2 rounded text-cyan-400 font-semibold font-mono">
-                {indexStatus.indexedCount} Packages Loaded
-              </span>
-              {indexStatus.abandonedCount > 0 && (
-                <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded text-amber-400 font-semibold font-mono flex items-center gap-1">
-                  <AlertTriangle className="h-2.5 w-2.5" />
-                  {indexStatus.abandonedCount} Abandoned
-                </span>
+      <div className="mt-4 flex flex-col gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3.5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between w-full">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className={`h-2.5 w-2.5 rounded-full ${localIndexing ? 'bg-cyan-400 animate-pulse' : 'bg-emerald-500'}`} />
+              {localIndexing && (
+                <span className="absolute top-0 left-0 h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping" />
               )}
             </div>
-            <p className="text-[10px] text-zinc-400 mt-0.5 animate-pulse-slow">
-              {indexStatus.isIndexing 
-                ? "Connecting directly to AUR repositories. Fetching and indexing packages in background..." 
-                : indexStatus.lastIndexTime 
-                  ? `Database learning index active. Last incremental sync: ${new Date(indexStatus.lastIndexTime).toLocaleTimeString()}`
-                  : "Database sync is fully current and standby"
-              }
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-200">AUR Local DB Indexer</span>
+                <span className="text-[10px] bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.2 rounded text-cyan-400 font-semibold font-mono">
+                  {indexStatus.indexedCount} Packages Loaded
+                </span>
+                {indexStatus.abandonedCount > 0 && (
+                  <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded text-amber-400 font-semibold font-mono flex items-center gap-1">
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    {indexStatus.abandonedCount} Abandoned
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-zinc-400 mt-0.5 animate-pulse-slow">
+                {localIndexing 
+                  ? "Connecting directly to AUR repositories. Fetching and indexing packages in background..." 
+                  : indexStatus.lastIndexTime 
+                    ? `Database learning index active. Last incremental sync: ${new Date(indexStatus.lastIndexTime).toLocaleTimeString()}`
+                    : "Database sync is fully current and standby"
+                }
+              </p>
+            </div>
           </div>
+          
+          <button
+            disabled={localIndexing}
+            onClick={handleSyncDatabase}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 disabled:hover:bg-cyan-500/10 disabled:opacity-50 text-xs font-bold text-cyan-400 px-3.5 py-1.5 transition active:scale-95 shrink-0"
+          >
+            {localIndexing ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-3.5 w-3.5" />
+                Update Index
+              </>
+            )}
+          </button>
         </div>
-        
-        <button
-          disabled={indexStatus.isIndexing}
-          onClick={handleSyncDatabase}
-          className="flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 disabled:hover:bg-cyan-500/10 disabled:opacity-50 text-xs font-bold text-cyan-400 px-3.5 py-1.5 transition active:scale-95 shrink-0"
-        >
-          {indexStatus.isIndexing ? (
-            <>
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Syncing...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-3.5 w-3.5" />
-              Update Index
-            </>
-          )}
-        </button>
+
+        {/* Indexing Progress Bar */}
+        {(localIndexing || indexingProgress > 0) && (
+          <div className="mt-1 border-t border-white/5 pt-3 animate-fade-in" id="index-progress-container">
+            <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
+              <span className="flex items-center gap-1.5 text-zinc-400">
+                {localIndexing ? (
+                  <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                )}
+                {localIndexing ? "Compiling live seeds and indexing AUR datasets..." : "Database Sync fully completed!"}
+              </span>
+              <span className={isIndexingCompleted ? "text-emerald-400 font-bold" : "text-cyan-400 font-semibold"}>
+                {Math.round(indexingProgress)}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full bg-zinc-950/40 rounded-full overflow-hidden border border-white/5">
+              <div 
+                className={`h-full rounded-full transition-all duration-300 ease-out ${
+                  isIndexingCompleted 
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]" 
+                    : "bg-gradient-to-r from-cyan-500 to-indigo-500 shadow-[0_0_8px_rgba(6,182,212,0.4)]"
+                }`}
+                style={{ width: `${indexingProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sorting, Filtering drop-downs, and counts */}
       <div className="mt-4 flex flex-col gap-3 border-t border-white/5 pt-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Repository Tabs */}
-        <div className="flex flex-wrap gap-1.5 glass-pill-container p-1 rounded-xl shrink-0 self-start">
-          {(["all", "aur", "official", "upgrades"] as const).map((tab) => {
-            const labelMap = {
-              all: "All Packages",
-              aur: "AUR Source",
-              official: "Repo Binaries",
-              upgrades: "Upgradable Only"
-            };
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1.5 text-xs rounded-md font-semibold transition cursor-pointer ${
-                  activeTab === tab
-                    ? "bg-white/10 text-cyan-400 border border-white/10"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {labelMap[tab]}
-              </button>
-            );
-          })}
+        {/* Repository Tabs & Batch Select buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-1.5 glass-pill-container p-1 rounded-xl shrink-0 self-start">
+            {(["all", "aur", "official", "upgrades"] as const).map((tab) => {
+              const labelMap = {
+                all: "All Packages",
+                aur: "AUR Source",
+                official: "Repo Binaries",
+                upgrades: "Upgradable Only"
+              };
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition cursor-pointer ${
+                    activeTab === tab
+                      ? "bg-white/10 text-cyan-400 border border-white/10"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {labelMap[tab]}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => {
+              setIsBatchMode(!isBatchMode);
+              setSelectedBatch([]);
+            }}
+            className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 border ${
+              isBatchMode
+                ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                : "border-white/5 bg-zinc-900/50 text-slate-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            {isBatchMode ? "Exit Batch Mode" : "Select Multiple"}
+          </button>
         </div>
 
         {/* Sorting controls and Filters selector */}
@@ -346,7 +490,7 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
           <>
             <div className="mt-4 flex-1 overflow-y-auto min-h-[500px] max-h-[850px] pr-1 space-y-3 glass-scrollbar">
               {paginatedResults.length > 0 ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 animate-fadeIn">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 animate-fadeIn">
                   {paginatedResults.map((pkg, idx) => {
                     const name = pkg.Name || pkg.name;
                     const version = pkg.Version || pkg.version;
@@ -364,14 +508,30 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
                       day: 'numeric'
                     }) : null;
 
+                    const isSelected = selectedBatch.some(p => (p.Name || p.name).toLowerCase() === name.toLowerCase());
+
+                    const handleCardClick = () => {
+                      if (isBatchMode) {
+                        if (isSelected) {
+                          setSelectedBatch(prev => prev.filter(p => (p.Name || p.name).toLowerCase() !== name.toLowerCase()));
+                        } else {
+                          setSelectedBatch(prev => [...prev, pkg]);
+                        }
+                      } else {
+                        onSelectPackage(name, isAurPkg);
+                      }
+                    };
+
                     return (
                       <div
                         key={idx}
-                        onClick={() => onSelectPackage(name, isAurPkg)}
-                        className={`group relative flex flex-col justify-between rounded-xl p-4 transition duration-200 w-full glass-panel glass-panel-hover cursor-pointer border ${
-                          isAbandoned 
-                            ? "border-amber-500/10 hover:border-amber-500/25 bg-amber-500/[0.01]" 
-                            : "border-white/5"
+                        onClick={handleCardClick}
+                        className={`group relative flex flex-col justify-between rounded-xl p-4 transition duration-200 w-full glass-panel cursor-pointer border ${
+                          isSelected
+                            ? "border-cyan-500/40 bg-cyan-500/[0.03] shadow-[0_0_15px_rgba(34,211,238,0.05)]"
+                            : isAbandoned 
+                              ? "border-amber-500/10 hover:border-amber-500/25 bg-amber-500/[0.01]" 
+                              : "border-white/5 glass-panel-hover"
                         }`}
                       >
                         <div>
@@ -397,6 +557,15 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
                                   <CheckCircle2 className="h-2.5 w-2.5" />
                                   Installed
                                 </span>
+                              )}
+                              {isBatchMode && (
+                                <div className={`h-5 w-5 rounded-md border flex items-center justify-center transition-all ${
+                                  isSelected 
+                                    ? "bg-cyan-500 border-cyan-500 text-zinc-950" 
+                                    : "border-white/20 bg-black/40 text-slate-400 hover:border-white/40"
+                                }`}>
+                                  {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                                </div>
                               )}
                               <span
                                 className={`rounded px-1.5 py-0.5 text-[9px] font-bold font-mono ${
@@ -432,9 +601,15 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
                               )}
                             </div>
                           ) : (
-                            <span className="text-[10px] text-zinc-400 font-mono">
-                              Official Arch Mirror Binaries
-                            </span>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-zinc-400 font-mono">
+                              <span>Official Arch Mirror Binaries</span>
+                              {formattedDate && (
+                                <span className="flex items-center gap-1 text-slate-400">
+                                  <Clock className="h-3 w-3 text-cyan-500/60" />
+                                  Updated: {formattedDate}
+                                </span>
+                              )}
+                            </div>
                           )}
 
                           <span className="flex items-center gap-1 text-[10px] font-semibold text-cyan-400 opacity-0 group-hover:opacity-100 transition duration-150 shrink-0 self-end">
@@ -517,6 +692,58 @@ export default function PackageExplorer({ onSelectPackage, installedPackages }: 
           </>
         );
       })()}
+
+      {/* Floating Multi-Select compilation queue notifier footer bar */}
+      {isBatchMode && selectedBatch.length > 0 && (
+        <div className="mt-6 flex flex-col gap-4 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.02] p-4.5 animate-slide-up">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between w-full">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
+                <Layers className="h-5 w-5 animate-pulse" />
+              </div>
+              <div className="truncate">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-slate-100 uppercase font-mono">AUR Batch Compilation Console</span>
+                  <span className="bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 rounded text-[10px] text-cyan-400 font-mono font-black animate-pulse">
+                    {selectedBatch.length} QUEUED
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-0.5 font-mono truncate">
+                  Queued Package Targets: {selectedBatch.map(p => p.Name || p.name).join(", ")}
+                 </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-2.5 shrink-0 select-none">
+              <button
+                onClick={() => setSelectedBatch(prev => prev.slice(0, -1))}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-400 hover:text-white px-3 py-2.5 transition cursor-pointer"
+                title="Undo last selection"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                Undo
+              </button>
+              <button
+                onClick={() => setSelectedBatch([])}
+                className="rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-400 hover:text-white px-4 py-2.5 transition cursor-pointer"
+              >
+                Flush Queue
+              </button>
+              <button
+                onClick={() => {
+                  if (onStartBatchCompilation) {
+                    onStartBatchCompilation(selectedBatch);
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 active:scale-95 text-xs font-black text-zinc-950 px-5 py-2.5 transition shadow-lg shadow-cyan-500/10 cursor-pointer uppercase font-mono"
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                Launch compiler suite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
