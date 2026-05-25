@@ -498,16 +498,35 @@ function getCpuUsage(): Promise<string> {
 // Real-time dynamic filesystem parsing for root disk allocations
 async function getDiskSpace() {
   try {
-    const { stdout } = await execAsync("df -h /");
+    const { stdout } = await execAsync("df -h --output=size,used,pcent /");
     const lines = stdout.trim().split("\n");
     if (lines.length > 1) {
-      const parts = lines[1].split(/\s+/);
-      const total = parts[1];
-      const used = parts[2];
-      const percent = parseInt(parts[4].replace("%", ""), 10);
+      const parts = lines[1].trim().split(/\s+/);
+      const total = parts[0];
+      const used = parts[1];
+      const percent = parseInt(parts[2].replace("%", ""), 10);
       return { used, total, percent };
     }
-  } catch {}
+  } catch {
+    // Fallback if --output is not supported, try standard line-by-line matching
+    try {
+      const { stdout } = await execAsync("df -h /");
+      const lines = stdout.trim().split("\n");
+      const rootLine = lines.find(l => l.trim().endsWith(" /") || l.trim().includes(" / "));
+      if (rootLine) {
+        const parts = rootLine.trim().split(/\s+/);
+        // If device path is long and line wrapped, we take values from a wrapped line,
+        // but let's parse safely based on standard columns or column count from back:
+        // Size Used Avail Use% Mounted
+        if (parts.length >= 5) {
+          const total = parts[parts.length - 5];
+          const used = parts[parts.length - 4];
+          const percent = parseInt(parts[parts.length - 2].replace("%", ""), 10);
+          return { used, total, percent };
+        }
+      }
+    } catch {}
+  }
   return { used: "34.5 GB", total: "120.0 GB", percent: 28.7 };
 }
 
@@ -1205,6 +1224,9 @@ StartupWMClass=ArchForge
           launchMakepkg();
         }
 
+        let hasRetried = false;
+        const encounteredKeys = new Set<string>();
+
         function launchMakepkg() {
           const makepkg = spawn("makepkg", ["-si", "--noconfirm", "--needed"], authOpts);
           activeProcesses.set(name, makepkg);
@@ -1216,6 +1238,12 @@ StartupWMClass=ArchForge
             if (text.toLowerCase().includes("fakeroot")) {
               hasFakerootError = true;
             }
+            // Parse for missing public keys, e.g. "unknown public key 5384CE82BA52C83A"
+            const keyRegex = /(?:unknown public key|key)\s+([0-9a-fA-F]{8,})/gi;
+            let match;
+            while ((match = keyRegex.exec(text)) !== null) {
+              encounteredKeys.add(match[1].toUpperCase());
+            }
             sendLine(text.trim());
           });
 
@@ -1224,17 +1252,80 @@ StartupWMClass=ArchForge
             if (text.toLowerCase().includes("fakeroot")) {
               hasFakerootError = true;
             }
+            // Parse for missing public keys, e.g. "unknown public key 5384CE82BA52C83A"
+            const keyRegex = /(?:unknown public key|key)\s+([0-9a-fA-F]{8,})/gi;
+            let match;
+            while ((match = keyRegex.exec(text)) !== null) {
+              encounteredKeys.add(match[1].toUpperCase());
+            }
             sendLine(text.trim());
           });
 
           makepkg.on("close", async (exitCode) => {
             activeProcesses.delete(name);
-            if (wrapper) {
-              await wrapper.cleanup();
-            }
             if (exitCode === 0) {
+              if (wrapper) {
+                await wrapper.cleanup();
+              }
               sendLine(`==> [ArchForge] COMPILATION SUCCEEDED: Package '${name}' registered successfully on bare-metal database!`);
+              // Clear memory cache so that installed lists are updated immediately
+              cachedPackages = [];
+              lastCacheUpdate = 0;
+              res.write("event: end\ndata: \n\n");
+              res.end();
             } else {
+              // Check if we can auto-repair missing GPG signatures
+              if (encounteredKeys.size > 0 && !hasRetried) {
+                hasRetried = true;
+                sendLine(`\n🔧 [ArchForge AutoRepair] Detected missing PGP signature public keys: ${Array.from(encounteredKeys).join(", ")}`);
+                sendLine(`==> Procuring missing keys from official GnuPG keyservers...`);
+                
+                let allImported = true;
+                for (const k of encounteredKeys) {
+                  sendLine(`==> gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys ${k}`);
+                  try {
+                    await execAsync(`gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys ${k}`);
+                    sendLine(`✓ Successfully imported key ${k}!`);
+                  } catch (gpgE: any) {
+                    sendLine(`⚠️ Warning: PGP keyserver lookup timed out on keyserver.ubuntu.com. Trying fallback keyserver keys.openpgp.org...`);
+                    try {
+                      await execAsync(`gpg --keyserver hkps://keys.openpgp.org --recv-keys ${k}`);
+                      sendLine(`✓ Successfully imported key ${k} from backup openpgp keyserver!`);
+                    } catch (gpgE2: any) {
+                      sendLine(`error: Failed to import key ${k}: ${gpgE2.message || gpgE2}`);
+                      allImported = false;
+                    }
+                  }
+                }
+                
+                if (allImported) {
+                  sendLine(`\n⚡ [ArchForge AutoRepair] All PGP keys recovered successfully. Restarting makepkg compiler auto-pipeline...`);
+                  // Clean up previous wrappers if they exist
+                  if (wrapper) {
+                    try { await wrapper.cleanup(); } catch {}
+                  }
+                  // Reset wrapper and launch again
+                  if (pw) {
+                    try {
+                      const w = await createSecureSudoWrapper(pw);
+                      wrapper = w;
+                      const cleanEnv = getCleanEnv();
+                      authOpts.env.PATH = `${w.wrapperPath}:${cleanEnv.PATH || ""}`;
+                      authOpts.env.SUDO = "sudo";
+                    } catch (err) {
+                      authOpts.env.SUDO = "pkexec";
+                    }
+                  } else {
+                    authOpts.env.SUDO = "pkexec";
+                  }
+                  launchMakepkg();
+                  return;
+                }
+              }
+
+              if (wrapper) {
+                await wrapper.cleanup();
+              }
               sendLine(`error: AUR build makepkg exited with error code: ${exitCode}`);
               if (hasFakerootError || exitCode === 15) {
                 sendLine("");
@@ -1244,12 +1335,12 @@ StartupWMClass=ArchForge
                 sendLine(`👉  sudo pacman -S --needed base-devel`);
                 sendLine("");
               }
+              // Clear memory cache so that installed lists are updated immediately
+              cachedPackages = [];
+              lastCacheUpdate = 0;
+              res.write("event: end\ndata: \n\n");
+              res.end();
             }
-            // Clear memory cache so that installed lists are updated immediately
-            cachedPackages = [];
-            lastCacheUpdate = 0;
-            res.write("event: end\ndata: \n\n");
-            res.end();
           });
         }
       });
