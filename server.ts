@@ -71,6 +71,19 @@ let isIndexing = false;
 let lastIndexTime = 0;
 const cacheFilePath = path.join(os.tmpdir(), "aur_index_cache.json");
 
+// O(1) Quick lookup Map of lowercase package names to their database index representation
+const aurDatabaseMap = new Map<string, { index: number; pkg: any }>();
+
+function rebuildAurMap() {
+  aurDatabaseMap.clear();
+  for (let i = 0; i < aurDatabaseIndex.length; i++) {
+    const pkg = aurDatabaseIndex[i];
+    if (pkg && pkg.Name) {
+      aurDatabaseMap.set(pkg.Name.toLowerCase(), { index: i, pkg });
+    }
+  }
+}
+
 // Some high-quality initial seed packages (mix of active and abandoned) to instantly load
 const initialAurSeeds = [
   { Name: "visual-studio-code-bin", Version: "1.90.0-1", Description: "Visual Studio Code binary release with built-in telemetry disabled.", NumVotes: 5210, Popularity: 48.2, Maintainer: "danyisidori", LastModified: Math.floor(Date.now() / 1000) - 2 * 24 * 3600, FirstSubmitted: 1445000000, URL: "https://code.visualstudio.com/" },
@@ -108,6 +121,7 @@ function loadAurIndex() {
     console.error("Failed to load/save AUR index:", err);
     aurDatabaseIndex = [...initialAurSeeds];
   }
+  rebuildAurMap();
 }
 loadAurIndex();
 
@@ -171,7 +185,6 @@ async function runFullAURIndexing() {
       for (const item of combinedResults) {
         if (!item.Name) continue;
         const nameLower = item.Name.toLowerCase();
-        const existingIdx = aurDatabaseIndex.findIndex(p => p.Name.toLowerCase() === nameLower);
         
         const mappedItem = {
           Name: item.Name,
@@ -186,11 +199,13 @@ async function runFullAURIndexing() {
           LastModified: item.LastModified || Math.floor(Date.now() / 1000) - 2 * 24 * 3600
         };
         
-        if (existingIdx !== -1) {
-          aurDatabaseIndex[existingIdx] = { ...aurDatabaseIndex[existingIdx], ...mappedItem };
+        const existing = aurDatabaseMap.get(nameLower);
+        if (existing) {
+          aurDatabaseIndex[existing.index] = { ...aurDatabaseIndex[existing.index], ...mappedItem };
           updated++;
         } else {
           aurDatabaseIndex.push(mappedItem);
+          aurDatabaseMap.set(nameLower, { index: aurDatabaseIndex.length - 1, pkg: mappedItem });
           added++;
         }
       }
@@ -198,10 +213,11 @@ async function runFullAURIndexing() {
       // Limit index elements pre-sorting to save memory
       if (aurDatabaseIndex.length > 30000) {
         aurDatabaseIndex = aurDatabaseIndex.slice(0, 30000);
+        rebuildAurMap();
       }
       
       // Yield execution thread gently to allow server to reply to client fast
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
     
     // Sort packages by Popularity then NumVotes descending
@@ -216,6 +232,7 @@ async function runFullAURIndexing() {
       aurDatabaseIndex = aurDatabaseIndex.slice(0, 15000);
     }
     
+    rebuildAurMap();
     lastIndexTime = Date.now();
     fs.writeFileSync(cacheFilePath, JSON.stringify(aurDatabaseIndex, null, 2), "utf8");
     console.log(`==> Initial full database index complete. Added: ${added}, Updated: ${updated}. Total in index: ${aurDatabaseIndex.length}`);
@@ -226,8 +243,15 @@ async function runFullAURIndexing() {
   }
 }
 
-// Trigger once initially on startup asynchronously
-runFullAURIndexing().catch(err => console.error("Startup full index trigger error:", err));
+// Smart startup initiation - only run full index build in background after delay AND only if there is no cache
+setTimeout(() => {
+  if (aurDatabaseIndex.length <= initialAurSeeds.length) {
+    console.log("[ArchForge Perf] No pre-existing cache found. Building full index in background...");
+    runFullAURIndexing().catch(err => console.error("Startup full index trigger error:", err));
+  } else {
+    console.log(`[ArchForge Perf] Instant launch: loaded ${aurDatabaseIndex.length} packages from cache. Postponing automatic index rebuild.`);
+  }
+}, 15000);
 
 // In-Memory Database initialized with default realistic Arch system state (used as fallback or for mock states)
 let installedPackages: InstalledPackage[] = [
@@ -716,6 +740,47 @@ async function startServer() {
     }
   });
 
+  // GET GTK System Theme Preference
+  app.get("/api/system/gtk-theme", async (req, res) => {
+    try {
+      let preferDark = true; // Safe system-level default
+      // 1. Check colors-scheme in GNOME/gsettings
+      try {
+        const colorScheme = cpExecSync("gsettings get org.gnome.desktop.interface color-scheme", { timeout: 800, stdio: ["pipe", "pipe", "ignore"] }).toString().trim();
+        if (colorScheme.includes("prefer-light")) {
+          preferDark = false;
+        } else if (colorScheme.includes("prefer-dark")) {
+          preferDark = true;
+        } else {
+          // GSettings color scheme fallback
+          const gtkTheme = cpExecSync("gsettings get org.gnome.desktop.interface gtk-theme", { timeout: 800, stdio: ["pipe", "pipe", "ignore"] }).toString().trim();
+          const themeLower = gtkTheme.toLowerCase();
+          if (themeLower.includes("dark") || themeLower.includes("black") || themeLower.includes("breeze-dark")) {
+            preferDark = true;
+          } else if (themeLower.includes("light") || themeLower.includes("adwaita") || themeLower.includes("classic")) {
+            preferDark = false;
+          }
+        }
+      } catch (e) {
+        // Handle KDE Plasma style configurations if gsettings fails
+        try {
+          const kdeGlobalsPath = path.join(os.homedir(), ".config/kdeglobals");
+          if (fs.existsSync(kdeGlobalsPath)) {
+            const content = fs.readFileSync(kdeGlobalsPath, "utf8");
+            if (content.includes("ColorScheme=BreezeDark") || content.includes("ColorScheme=Breeze-Dark")) {
+              preferDark = true;
+            } else if (content.includes("ColorScheme=Breeze") || content.includes("ColorScheme=Breeze-Light")) {
+              preferDark = false;
+            }
+          }
+        } catch {}
+      }
+      res.json({ preferDark, theme: preferDark ? "dark" : "light" });
+    } catch (err: any) {
+      res.json({ preferDark: true, theme: "dark", error: err.message });
+    }
+  });
+
   // POST Desktop Integration Setup
   app.post("/api/system/desktop-integration/install", async (req, res) => {
     try {
@@ -745,21 +810,47 @@ async function startServer() {
         targetPath = currentBinary;
       }
 
-      // Download / Create the desktop launcher icon
+      // Download / Create the desktop launcher icon across all standard GTK locations
       const localIconPath = path.join(iconDir, "archforge.png");
+      let iconBuffer: Buffer | null = null;
       try {
         console.log("[ArchForge Integrator] Fetching application launcher icon...");
         const response = await fetch("https://cdn-icons-png.flaticon.com/512/5904/5904576.png");
         const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        await fs.promises.writeFile(localIconPath, buffer);
+        iconBuffer = Buffer.from(arrayBuffer);
+        await fs.promises.writeFile(localIconPath, iconBuffer);
       } catch (err) {
         const srcIcon = path.join(__dirname, "archforge.png");
         if (fs.existsSync(srcIcon)) {
-          await fs.promises.copyFile(srcIcon, localIconPath);
+          iconBuffer = await fs.promises.readFile(srcIcon);
+          await fs.promises.writeFile(localIconPath, iconBuffer);
         } else {
-          await fs.promises.writeFile(localIconPath, "");
+          iconBuffer = Buffer.alloc(0);
+          await fs.promises.writeFile(localIconPath, iconBuffer);
         }
+      }
+
+      // Copy matching launcher icon into hicolor theme icons and legacy icon directory to ensure file manager and panel integration
+      if (iconBuffer && iconBuffer.length > 0) {
+        const iconPathsToPopulate = [
+          path.join(homeDir, ".icons", "archforge.png"),
+          path.join(homeDir, ".local/share/icons/hicolor/48x48/apps/archforge.png"),
+          path.join(homeDir, ".local/share/icons/hicolor/256x256/apps/archforge.png"),
+          path.join(homeDir, ".local/share/icons/hicolor/512x512/apps/archforge.png"),
+        ];
+        for (const p of iconPathsToPopulate) {
+          try {
+            await fs.promises.mkdir(path.dirname(p), { recursive: true });
+            await fs.promises.writeFile(p, iconBuffer);
+          } catch (e) {
+            console.warn(`[ArchForge Icon Installer] Could not write icon target ${p}:`, e);
+          }
+        }
+        // Force refresh system GTK icon cache databases
+        try {
+          await execAsync(`gtk-update-icon-cache -f ${path.join(homeDir, ".local/share/icons/hicolor")}`).catch(() => {});
+          await execAsync(`gtk-update-icon-cache -f ${path.join(homeDir, ".icons")}`).catch(() => {});
+        } catch {}
       }
 
       // Generate .desktop entry
@@ -1032,7 +1123,8 @@ StartupWMClass=ArchForge
       let indexModified = false;
       for (const item of liveResults) {
         if (!item.Name) continue;
-        const existingIdx = aurDatabaseIndex.findIndex(p => p.Name.toLowerCase() === item.Name.toLowerCase());
+        const nameLower = item.Name.toLowerCase();
+        
         const mappedItem = {
           Name: item.Name,
           Version: item.Version || "1.0.0-1",
@@ -1046,10 +1138,12 @@ StartupWMClass=ArchForge
           LastModified: item.LastModified || Math.floor(Date.now() / 1000) - 2 * 24 * 3600
         };
 
-        if (existingIdx !== -1) {
-          aurDatabaseIndex[existingIdx] = { ...aurDatabaseIndex[existingIdx], ...mappedItem };
+        const existing = aurDatabaseMap.get(nameLower);
+        if (existing) {
+          aurDatabaseIndex[existing.index] = { ...aurDatabaseIndex[existing.index], ...mappedItem };
         } else {
           aurDatabaseIndex.push(mappedItem);
+          aurDatabaseMap.set(nameLower, { index: aurDatabaseIndex.length - 1, pkg: mappedItem });
           indexModified = true;
         }
       }
@@ -1057,6 +1151,7 @@ StartupWMClass=ArchForge
       if (indexModified) {
         if (aurDatabaseIndex.length > 15000) {
           aurDatabaseIndex = aurDatabaseIndex.slice(0, 15000);
+          rebuildAurMap();
         }
         fs.writeFileSync(cacheFilePath, JSON.stringify(aurDatabaseIndex, null, 2), "utf8");
       }

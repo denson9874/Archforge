@@ -23,7 +23,8 @@ import {
   Moon,
   Palette,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  Monitor
 } from "lucide-react";
 
 import { InstalledPackage, SystemStats } from "./types";
@@ -39,9 +40,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli">("dashboard");
 
   // Theme & Custom Accent Color States
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    return (localStorage.getItem("archforge-theme") as "dark" | "light") || "dark";
+  const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
+    return (localStorage.getItem("archforge-theme") as "dark" | "light" | "system") || "system";
   });
+  const [resolvedSystemTheme, setResolvedSystemTheme] = useState<"dark" | "light">("dark");
   const [accentColor, setAccentColor] = useState<string>(() => {
     return localStorage.getItem("archforge-accent") || "#22d3ee";
   });
@@ -112,16 +114,40 @@ export default function App() {
     document.title = "ArchForge System Package Manager";
   }, []);
 
+  // Poll GTK/system theme
+  const detectGtkTheme = async () => {
+    try {
+      const res = await fetch("/api/system/gtk-theme");
+      if (res.ok) {
+        const data = await res.json();
+        setResolvedSystemTheme(data.theme);
+      } else {
+        const matched = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        setResolvedSystemTheme(matched);
+      }
+    } catch {
+      const matched = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      setResolvedSystemTheme(matched);
+    }
+  };
+
+  useEffect(() => {
+    detectGtkTheme();
+    const interval = setInterval(detectGtkTheme, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Sync theme to document element
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "light") {
+    const activeTheme = theme === "system" ? resolvedSystemTheme : theme;
+    if (activeTheme === "light") {
       root.classList.add("theme-light");
     } else {
       root.classList.remove("theme-light");
     }
     localStorage.setItem("archforge-theme", theme);
-  }, [theme]);
+  }, [theme, resolvedSystemTheme]);
 
   // Sync custom accent color shades dynamically
   useEffect(() => {
@@ -453,31 +479,43 @@ export default function App() {
                     </h3>
                   </div>
                   <p className="text-[11px] text-slate-400 font-sans mt-1">
-                    Choose between the rich, dark Cosmic Slate base or high-contrast Arch Light interface configurations.
+                    Synchronize with your system's GTK color profile or manually force Cosmic Slate or Arch Light settings.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <button
+                    onClick={() => setTheme("system")}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition duration-150 cursor-pointer text-[10px] font-bold ${
+                      theme === "system"
+                        ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
+                        : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
+                    }`}
+                    title={`Currently resolved local GTK theme: ${resolvedSystemTheme === "dark" ? "Dark Mode" : "Light Mode"}`}
+                  >
+                    <Monitor className="h-3.5 w-3.5 shrink-0" />
+                    <span>System GTK</span>
+                  </button>
                   <button
                     onClick={() => setTheme("dark")}
-                    className={`flex items-center justify-center gap-2.5 rounded-lg border p-3.5 transition duration-150 cursor-pointer text-xs font-bold ${
+                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition duration-150 cursor-pointer text-[10px] font-bold ${
                       theme === "dark"
                         ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
                         : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
                     }`}
                   >
-                    <Moon className="h-4 w-4 shrink-0" />
-                    Cosmic Slate
+                    <Moon className="h-3.5 w-3.5 shrink-0" />
+                    <span>Cosmic Slate</span>
                   </button>
                   <button
                     onClick={() => setTheme("light")}
-                    className={`flex items-center justify-center gap-2.5 rounded-lg border p-3.5 transition duration-150 cursor-pointer text-xs font-bold ${
+                    className={`flex flex-col items-center justify-center gap-1 rounded-lg border p-2 transition duration-150 cursor-pointer text-[10px] font-bold ${
                       theme === "light"
                         ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
                         : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
                     }`}
                   >
-                    <Sun className="h-4 w-4 shrink-0" />
-                    Arch Light
+                    <Sun className="h-3.5 w-3.5 shrink-0" />
+                    <span>Arch Light</span>
                   </button>
                 </div>
               </div>
