@@ -24,8 +24,39 @@ export default function BuildProgressModal({
   const [rememberPw, setRememberPw] = useState(true);
   const [authSubmitted, setAuthSubmitted] = useState(false);
 
+  // Initialize and load systemRealArch to check fallback dynamically
+  const [systemRealArch, setSystemRealArch] = useState<boolean | null>(() => {
+    if (isRealArch !== undefined && isRealArch !== null) {
+      return isRealArch;
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (isRealArch !== undefined && isRealArch !== null) {
+      setSystemRealArch(isRealArch);
+    } else {
+      let active = true;
+      fetch("/api/system/stats")
+        .then((res) => res.json())
+        .then((data) => {
+          if (active) {
+            setSystemRealArch(!!data.isRealArch);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setSystemRealArch(false);
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }
+  }, [isRealArch]);
+
   // Determine if we need to show the Auth Panel before starting the build
-  const needsAuth = !!isRealArch && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
+  const needsAuth = systemRealArch === true && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
 
   const [currentPhase, setCurrentPhase] = useState("");
   const [percentage, setPercentage] = useState(0);
@@ -42,8 +73,8 @@ export default function BuildProgressModal({
   const steps = generateBuildSteps(pkgName, pkgVersion, depends);
 
   useEffect(() => {
-    // If we're on a real Arch system but haven't submitted the password yet, don't start the stream!
-    if (isRealArch && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted) {
+    // If systemRealArch is not determined yet, or if we need auth first, do not initiate connection
+    if (systemRealArch === null || (systemRealArch === true && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted)) {
       return;
     }
 
@@ -52,7 +83,10 @@ export default function BuildProgressModal({
 
     // Connect to Server-Sent Events (SSE) stream to fetch live bare-metal command stdout
     const savedSudoPw = sessionStorage.getItem("archforge-sudopw") || "";
-    const sseUrl = `/api/packages/install/stream?name=${encodeURIComponent(pkgName)}&pw=${encodeURIComponent(savedSudoPw)}`;
+    let sseUrl = `/api/packages/install/stream?name=${encodeURIComponent(pkgName)}&pw=${encodeURIComponent(savedSudoPw)}`;
+    if (pkgName === "system-upgrade" && depends.length > 0) {
+      sseUrl += `&packages=${encodeURIComponent(depends.join(","))}`;
+    }
     let eventSource: EventSource | null = null;
 
     try {
@@ -248,7 +282,7 @@ export default function BuildProgressModal({
         eventSource.close();
       }
     };
-  }, [pkgName, pkgVersion, authSubmitted, isRealArch]);
+  }, [pkgName, pkgVersion, authSubmitted, systemRealArch]);
 
   // Handle auto-scroll of scrolling terminal console
   useEffect(() => {
@@ -256,6 +290,17 @@ export default function BuildProgressModal({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs]);
+
+  if (systemRealArch === null) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md select-none animate-fadeIn">
+        <div className="relative w-full max-w-sm rounded-2xl p-6 glass-panel border border-white/10 shadow-2xl flex flex-col items-center justify-center text-center space-y-4">
+          <Loader2 className="h-8 w-8 text-cyan-400 animate-spin" />
+          <p className="text-xs text-zinc-400 font-mono">Initializing host connection...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (needsAuth) {
     return (

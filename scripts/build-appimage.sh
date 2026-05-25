@@ -290,7 +290,7 @@ function createSplashWindow() {
   });
 }
 
-function createMainWindow() {
+function createMainWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -305,7 +305,7 @@ function createMainWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadURL('http://localhost:3000');
+  mainWindow.loadURL('http://localhost:' + port);
 
   mainWindow.once('ready-to-show', () => {
     if (splashWindow && !splashWindow.isDestroyed()) {
@@ -315,7 +315,7 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http://localhost:3000') || url.startsWith('http://127.0.0.1:3000')) {
+    if (url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:')) {
       return { action: 'allow' };
     }
     console.log('[Electron Native Router] Opening URL externally:', url);
@@ -328,20 +328,21 @@ function createMainWindow() {
   });
 }
 
-function pollLocalExpressServer(port, callback) {
+function pollLocalExpressServer(callback) {
   let attempts = 0;
   const maxAttempts = 100;
   const check = () => {
     attempts++;
+    const port = global.archforgePort || 3000;
     const req = http.get(`http://localhost:${port}/api/system/stats`, (res) => {
-      callback(true);
+      callback(true, port);
     });
     
     req.on('error', () => {
       if (attempts < maxAttempts) {
         setTimeout(check, 150);
       } else {
-        callback(false);
+        callback(false, port);
       }
     });
   };
@@ -352,9 +353,9 @@ app.whenReady().then(() => {
   createSplashWindow();
   performDesktopIntegration();
 
-  pollLocalExpressServer(3000, (success) => {
+  pollLocalExpressServer((success, resolvedPort) => {
     if (success) {
-      createMainWindow();
+      createMainWindow(resolvedPort);
     } else {
       console.error('[Electron Core] Critical server connection timed out!');
       app.quit();
@@ -363,7 +364,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      createMainWindow(global.archforgePort || 3000);
     }
   });
 });
@@ -381,10 +382,7 @@ node -e "
   fs.writeFileSync('${APPDIR}/resources/app/package.json', JSON.stringify(pkg, null, 2));
 "
 
-echo "==> Compiling isolated production node-dependency subtree within payload..."
-cd "${APPDIR}/resources/app"
-npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
-cd "${PROJECT_DIR}"
+echo "==> AppImage is fully standalone: skipping nested npm installation inside packaging payload."
 
 # 8. Package using appimagetool
 echo "==> Fetching standalone appimagetool compiler..."

@@ -532,7 +532,7 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
     // Determine foreign packages (e.g. AUR wrappers or local makepkg builds)
     const foreignSet = new Set<string>();
     try {
-      const { stdout: mOut } = await execAsync("LC_ALL=C pacman -Qm");
+      const { stdout: mOut } = await execAsync("LC_ALL=C pacman -Qm", { maxBuffer: 1024 * 1024 * 10 });
       mOut.trim().split("\n").forEach(line => {
         const parts = line.split(/\s+/);
         if (parts[0]) foreignSet.add(parts[0].toLowerCase());
@@ -540,7 +540,7 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
     } catch {}
 
     // Parse the entire local system database via pacman -Qi
-    const { stdout } = await execAsync("LC_ALL=C pacman -Qi");
+    const { stdout } = await execAsync("LC_ALL=C pacman -Qi", { maxBuffer: 1024 * 1024 * 50 });
     const blocks = stdout.split(/\n(?=Name\s+:)/);
     const parsedPkgs: InstalledPackage[] = [];
 
@@ -673,28 +673,33 @@ async function startServer() {
     }
 
     if (isRealArch) {
-      let wrapper: any = null;
       try {
         console.log(`[ArchForge] Invoking pkexec/sudo to uninstall ${name}...`);
-        let execOpts: any = {};
         if (pw) {
-          wrapper = await createSecureSudoWrapper(pw);
-          const cleanEnv = getCleanEnv();
-          execOpts.env = {
-            PATH: `${wrapper.wrapperPath}:${cleanEnv.PATH || ""}`
-          };
+          const child = spawn("sudo", ["-S", "pacman", "-Rns", "--noconfirm", name]);
+          child.stdin.write(pw + "\n");
+          child.stdin.end();
+          
+          let out = "";
+          let errStr = "";
+          child.stdout.on("data", (data) => out += data);
+          child.stderr.on("data", (data) => errStr += data);
+          
+          await new Promise<void>((resolve, reject) => {
+            child.on("close", (code) => {
+              if (code === 0) resolve();
+              else reject(new Error(`sudo pacman -Rns failed with code ${code}. Stderr: ${errStr}`));
+            });
+          });
+        } else {
+          await execAsync(`pkexec pacman -Rns --noconfirm ${name}`);
         }
-        await execAsync(`pkexec pacman -Rns --noconfirm ${name}`, execOpts);
         cachedPackages = [];
         lastCacheUpdate = 0;
         return res.json({ success: true, message: `Host package uninstalled successfully.` });
       } catch (err: any) {
         console.error(`[ArchForge] Uninstallation failed:`, err);
-        return res.status(500).json({ error: `GUI Privilege escalation or package removal failed: ${err.message}` });
-      } finally {
-        if (wrapper) {
-          await wrapper.cleanup();
-        }
+        return res.status(500).json({ error: `Privilege escalation or package removal failed: ${err.message}` });
       }
     }
 
@@ -1083,18 +1088,33 @@ StartupWMClass=ArchForge
       let wrapper: any = null;
       let customEnv: any = { ...process.env, FORCE_COLOR: "true" };
       
-      if (pw) {
-        wrapper = await createSecureSudoWrapper(pw);
-        const cleanEnv = getCleanEnv();
-        customEnv.PATH = `${wrapper.wrapperPath}:${cleanEnv.PATH || ""}`;
-      }
-
       let executable = "pkexec";
       let execArgs = ["pacman", "-Syu", "--noconfirm"];
+
+      const packagesParam = req.query.packages as string;
+      if (packagesParam) {
+        const pkgs = packagesParam.split(",").map(p => p.trim()).filter(Boolean);
+        if (pkgs.length > 0) {
+          execArgs = ["pacman", "-Sy", "--noconfirm", ...pkgs];
+        }
+      }
+
+      if (pw) {
+        executable = "sudo";
+        execArgs = ["-S", ...execArgs];
+      } else {
+        // Fallback to wrapper for pkexec if needed, though pkexec is default
+        const cleanEnv = getCleanEnv();
+        customEnv.PATH = `${cleanEnv.PATH || ""}`;
+      }
 
       sendLine(`==> Executing: ${executable} ${execArgs.join(" ")}`);
       const upgradeProc = spawn(executable, execArgs, { env: customEnv });
       activeProcesses.set("system-upgrade", upgradeProc);
+
+      if (pw) {
+        upgradeProc.stdin.write(pw + "\n");
+      }
 
       upgradeProc.stdout.on("data", (data) => {
         sendLine(data.toString().trim());
@@ -1524,6 +1544,7 @@ package() {
 
   server.on("listening", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    (global as any).archforgePort = PORT;
   });
 
   server.on("error", (err: any) => {

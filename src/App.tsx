@@ -33,6 +33,7 @@ import TerminalCLI from "./components/TerminalCLI";
 import PackageExplorer from "./components/PackageExplorer";
 import PackageDetailDrawer from "./components/PackageDetailDrawer";
 import BuildProgressModal from "./components/BuildProgressModal";
+import UpgradeConfigModal from "./components/UpgradeConfigModal";
 
 export default function App() {
   const [installedPackages, setInstalledPackages] = useState<InstalledPackage[]>([]);
@@ -56,6 +57,8 @@ export default function App() {
   // Installer build modal states
   const [compilingPackage, setCompilingPackage] = useState<any | null>(null);
   const [isSyuUpgrade, setIsSyuUpgrade] = useState<boolean>(false);
+  const [selectedUpgradeNames, setSelectedUpgradeNames] = useState<string[]>([]);
+  const [showUpgradeConfig, setShowUpgradeConfig] = useState<boolean>(false);
 
   // Local utility filter state
   const [instFilter, setInstFilter] = useState<"all" | "aur" | "official" | "unstable">("all");
@@ -298,8 +301,8 @@ export default function App() {
   // Action: Complete full system upgrade (yay -Syu)
   const handleSyuCompilationSuccess = async () => {
     try {
-      // Find all outdated packages
-      const outdated = installedPackages.filter(p => p.hasUpdate);
+      // Find selected outdated packages
+      const outdated = installedPackages.filter(p => p.hasUpdate && selectedUpgradeNames.includes(p.name));
       for (const oldPkg of outdated) {
         await fetch("/api/packages/install", {
           method: "POST",
@@ -328,6 +331,17 @@ export default function App() {
     } finally {
       setIsSyuUpgrade(false);
     }
+  };
+
+  // Action: Trigger configured system upgrade
+  const handleSyuTrigger = () => {
+    const outdated = installedPackages.filter(p => p.hasUpdate);
+    if (outdated.length === 0) {
+      alert("No pending system upgrades available.");
+      return;
+    }
+    setSelectedUpgradeNames(outdated.map(p => p.name));
+    setShowUpgradeConfig(true);
   };
 
   // Action: Uninstall packages from local cache
@@ -695,7 +709,7 @@ export default function App() {
         <StatusMonitor
           stats={stats}
           onRefresh={refreshSystemData}
-          onSyu={() => setIsSyuUpgrade(true)}
+          onSyu={handleSyuTrigger}
         />
       </div>
 
@@ -961,7 +975,7 @@ export default function App() {
                 <TerminalCLI
                   onInstallPkg={handleCLIInstall}
                   onUninstallPkg={handleCLIUninstall}
-                  onRunSyu={() => setIsSyuUpgrade(true)}
+                  onRunSyu={handleSyuTrigger}
                   installedPackages={installedPackages}
                 />
               </motion.div>
@@ -1008,11 +1022,23 @@ export default function App() {
           />
         )}
 
+        {showUpgradeConfig && (
+          <UpgradeConfigModal
+            outdatedPackages={installedPackages.filter(p => p.hasUpdate)}
+            onConfirm={(selectedNames) => {
+              setSelectedUpgradeNames(selectedNames);
+              setShowUpgradeConfig(false);
+              setIsSyuUpgrade(true);
+            }}
+            onCancel={() => setShowUpgradeConfig(false)}
+          />
+        )}
+
         {isSyuUpgrade && (
           <BuildProgressModal
              pkgName="system-upgrade"
              pkgVersion="aur-syu"
-             depends={installedPackages.filter(p => p.hasUpdate).map(p => p.name)}
+             depends={selectedUpgradeNames}
              onComplete={handleSyuCompilationSuccess}
              onCancel={() => setIsSyuUpgrade(false)}
              isRealArch={stats?.isRealArch}
