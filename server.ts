@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { exec as cpExec, spawn as cpSpawn, execSync as cpExecSync } from "child_process";
 import os from "os";
 import fs from "fs";
@@ -1152,6 +1151,7 @@ package() {
 
   // Vite Integration Setup
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1183,7 +1183,7 @@ package() {
   });
 
   // If "--desktop" flag is passed, automatically launch the app in a frameless app window!
-  if (process.argv.includes("--desktop")) {
+  if (process.argv.includes("--desktop") && !process.versions.electron) {
     setTimeout(() => {
       const url = `http://localhost:${PORT}`;
       console.log(`\n🚀 [ArchForge Desktop Mode] Launching frameless bare-metal app window...`);

@@ -9,7 +9,7 @@ APPDIR="${BUILD_DIR}/ArchForge.AppDir"
 # 0. Verify Build System Environment Dependencies
 echo "==> Verifying core AppImage builder toolchain..."
 MISSING_BUILD_TOOLS=()
-for tool in npm curl tar xz; do
+for tool in npm curl tar xz unzip; do
   if ! command -v "$tool" &> /dev/null; then
     MISSING_BUILD_TOOLS+=("$tool")
   fi
@@ -19,8 +19,8 @@ if [ ${#MISSING_BUILD_TOOLS[@]} -ne 0 ]; then
   echo "=========================================================="
   echo "❌ ERROR: Missing required compilation tools: ${MISSING_BUILD_TOOLS[*]}"
   echo "💡 To compile the standalone AppImage, your system must have these utilities."
-  echo "👉 On Arch Linux: sudo pacman -S --needed npm curl tar xz"
-  echo "👉 On Debian/Ubuntu: sudo apt-get install -y npm curl tar xz-utils"
+  echo "👉 On Arch Linux: sudo pacman -S --needed npm curl tar xz unzip"
+  echo "👉 On Debian/Ubuntu: sudo apt-get install -y npm curl tar xz-utils unzip"
   echo "=========================================================="
   exit 1
 fi
@@ -36,26 +36,15 @@ npm run build
 # 2. Re-create workspace directories
 echo "==> Rebuilding packaging workspace..."
 rm -rf "${BUILD_DIR}"
-mkdir -p "${APPDIR}/usr/bin"
-mkdir -p "${APPDIR}/usr/share/archforge"
+mkdir -p "${APPDIR}/resources/app"
 
 # 3. Create Custom AppRun script inside AppDir
 echo "==> Creating custom AppRun entry point binary..."
 cat << 'EOF' > "${APPDIR}/AppRun"
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-export PATH="${HERE}/usr/bin:${PATH}"
-
-# Launch Node backend application in the background
-"${HERE}/usr/bin/node" "${HERE}/usr/share/archforge/dist/server.cjs" --desktop &
-SERVER_PID=$!
-
-# Graceful cleanup handler on termination
-trap 'kill $SERVER_PID 2>/dev/null' SIGINT SIGTERM EXIT
-
-# Wait for backend server to become responsive, then monitor its status
-sleep 1.2
-wait $SERVER_PID
+# Run standalone Electron directly, forwarding all system commandline parameters (e.g., --no-sandbox)
+exec "${HERE}/electron" "$@"
 EOF
 chmod +x "${APPDIR}/AppRun"
 
@@ -74,32 +63,99 @@ EOF
 
 # 5. Fetch/Create Sleek AppIcon
 echo "==> Fetching sleek packaging icon for ArchForge..."
-# Use a high-quality free terminal/forge icon from a fast public CDN repository
 curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/5904/5904576.png" || {
   echo "⚠️ Failed downloading icon from backup Flaticon CDN; generating a fallback visual placeholder instead..."
-  # If offline, touch a fallback file
   touch "${APPDIR}/archforge.png"
 }
 
-# 6. Download Standalone Node.js Binary (v20 LTS for maximum hardware stability)
-echo "==> Fetching precompiled, secure static Node.js LTS package..."
-NODE_VERSION="v20.12.2"
-NODE_TAR="node-${NODE_VERSION}-linux-x64.tar.xz"
-curl -s -S -f -L -O "https://nodejs.org/dist/${NODE_VERSION}/${NODE_TAR}"
+# 6. Fetch/Unpack Electron Standalone GUI Engine
+echo "==> Fetching precompiled, stable Electron x64 framework..."
+ELECTRON_VERSION="30.0.0"
+ELECTRON_ZIP="electron-v${ELECTRON_VERSION}-linux-x64.zip"
+curl -s -S -f -L -o "${BUILD_DIR}/${ELECTRON_ZIP}" "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/${ELECTRON_ZIP}"
 
-echo "==> Unpacking and binding server executable..."
-tar -xf "${NODE_TAR}" -C "${BUILD_DIR}"
-mv "${BUILD_DIR}/node-${NODE_VERSION}-linux-x64/bin/node" "${APPDIR}/usr/bin/node"
-rm -f "${NODE_TAR}"
-rm -rf "${BUILD_DIR}/node-${NODE_VERSION}-linux-x64"
+echo "==> Deploying standalone GUI shell..."
+unzip -q "${BUILD_DIR}/${ELECTRON_ZIP}" -d "${APPDIR}"
+rm -f "${BUILD_DIR}/${ELECTRON_ZIP}"
+
+# Grant execution rights to main framework launch routines and helpers
+chmod +x "${APPDIR}/electron"
+if [ -f "${APPDIR}/chrome-sandbox" ]; then
+  chmod 4755 "${APPDIR}/chrome-sandbox" || chmod +x "${APPDIR}/chrome-sandbox"
+fi
+
+# Remove default Electron splash screen archive so it evaluates our application main process instead
+rm -f "${APPDIR}/resources/default_app.asar"
 
 # 7. Isolate production payload and install clean NPM dependencies
 echo "==> Bundling full-stack production build assets into payload..."
-cp -r dist "${APPDIR}/usr/share/archforge/"
-cp package.json "${APPDIR}/usr/share/archforge/"
+cp -r dist "${APPDIR}/resources/app/"
+cp package.json "${APPDIR}/resources/app/"
+
+echo "==> Generating standalone Electron Orchestrator and API pipeline..."
+cat << 'EOF' > "${APPDIR}/resources/app/main.cjs"
+const { app, BrowserWindow, shell } = require('electron');
+const path = require('path');
+
+// Spin up our embedded local Express backend server within the same container thread
+const serverPath = path.join(__dirname, 'dist', 'server.cjs');
+console.log('[Electron] Loading Express backend: ', serverPath);
+require(serverPath);
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    title: "ArchForge Manager",
+    icon: path.join(__dirname, 'archforge.png'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  // Connect to the local Express server API and React UI
+  win.loadURL('http://localhost:3000');
+
+  // Hide traditional menu bar for clean modern window layout
+  win.setMenuBarVisibility(false);
+
+  // Delegate external HTTP references (such as AUR package websites) to the user's host web browser
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://localhost:3000') || url.startsWith('http://127.0.0.1:3000')) {
+      return { action: 'allow' };
+    }
+    console.log('[Electron] Forwarding external URL to standard browser:', url);
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  app.quit();
+});
+EOF
+
+echo "==> Re-aligning package manifest entry points to target Electron main loop..."
+node -e "
+  const fs = require('fs');
+  const pkg = JSON.parse(fs.readFileSync('${APPDIR}/resources/app/package.json', 'utf8'));
+  pkg.main = 'main.cjs';
+  fs.writeFileSync('${APPDIR}/resources/app/package.json', JSON.stringify(pkg, null, 2));
+"
 
 echo "==> Compiling isolated production node-dependency subtree within payload..."
-cd "${APPDIR}/usr/share/archforge"
+cd "${APPDIR}/resources/app"
 npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
 cd "${PROJECT_DIR}"
 
