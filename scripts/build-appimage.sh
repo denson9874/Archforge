@@ -111,10 +111,32 @@ chmod +x "${BUILD_DIR}/appimagetool"
 echo "==> Constructing standalone, double-clickable AppImage executable..."
 export ARCH=x86_64
 
-# Force appimagetool to compile inside non-interactive shells/containers using --appimage-extract-and-run
-if ! "${BUILD_DIR}/appimagetool" --appimage-extract-and-run "${APPDIR}" "${PROJECT_DIR}/ArchForge-x86_64.AppImage"; then
-  echo "⚠️ Trying with additional container configurations..."
-  "${BUILD_DIR}/appimagetool" --appimage-extract-and-run --no-sandbox "${APPDIR}" "${PROJECT_DIR}/ArchForge-x86_64.AppImage" || true
+# Extract appimagetool to bypass FUSE constraints in running containers/CI runners
+echo "==> Extracting appimagetool to SquashFS-Root..."
+cd "${BUILD_DIR}"
+if ! ./appimagetool --appimage-extract; then
+  echo "⚠️ appimagetool extraction failed, attempting direct execution..."
+fi
+cd "${PROJECT_DIR}"
+
+if [ -f "${BUILD_DIR}/squashfs-root/AppRun" ]; then
+  echo "==> Running extracted appimagetool binary directly..."
+  if ! "${BUILD_DIR}/squashfs-root/AppRun" "${APPDIR}" "${PROJECT_DIR}/ArchForge-x86_64.AppImage"; then
+    echo "❌ ERROR: AppImage packaging via extracted builder failed."
+    exit 1
+  fi
+else
+  echo "==> Fallback to extracting-and-running appimagetool directly..."
+  if ! "${BUILD_DIR}/appimagetool" --appimage-extract-and-run "${APPDIR}" "${PROJECT_DIR}/ArchForge-x86_64.AppImage"; then
+    echo "❌ ERROR: AppImage packaging execution failed."
+    exit 1
+  fi
+fi
+
+# Verify the output AppImage file exists
+if [ ! -f "${PROJECT_DIR}/ArchForge-x86_64.AppImage" ]; then
+  echo "❌ ERROR: Compilation finished but the output file ${PROJECT_DIR}/ArchForge-x86_64.AppImage was not found!"
+  exit 1
 fi
 
 # Clean temp directory
