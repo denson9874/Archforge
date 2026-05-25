@@ -85,7 +85,7 @@ curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/
 echo "==> Fetching precompiled, secure static Node.js LTS package..."
 NODE_VERSION="v20.12.2"
 NODE_TAR="node-${NODE_VERSION}-linux-x64.tar.xz"
-curl -s -L -O "https://nodejs.org/dist/${NODE_VERSION}/${NODE_TAR}"
+curl -s -S -f -L -O "https://nodejs.org/dist/${NODE_VERSION}/${NODE_TAR}"
 
 echo "==> Unpacking and binding server executable..."
 tar -xf "${NODE_TAR}" -C "${BUILD_DIR}"
@@ -105,7 +105,7 @@ cd "${PROJECT_DIR}"
 
 # 8. Package using appimagetool
 echo "==> Fetching standalone appimagetool compiler..."
-curl -s -L -o "${BUILD_DIR}/appimagetool" "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
+curl -s -S -f -L -o "${BUILD_DIR}/appimagetool" "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
 chmod +x "${BUILD_DIR}/appimagetool"
 
 echo "==> Constructing standalone, double-clickable AppImage executable..."
