@@ -711,7 +711,17 @@ async function startServer() {
             });
           });
         } else {
-          await execAsync(`pkexec pacman -Rns --noconfirm ${name}`);
+          const child = spawn("pkexec", ["pacman", "-Rns", "--noconfirm", name]);
+
+          let errStr = "";
+          child.stderr.on("data", (data) => errStr += data);
+
+          await new Promise<void>((resolve, reject) => {
+            child.on("close", (code) => {
+              if (code === 0) resolve();
+              else reject(new Error(`pkexec pacman -Rns failed with code ${code}. Stderr: ${errStr}`));
+            });
+          });
         }
         cachedPackages = [];
         lastCacheUpdate = 0;
