@@ -36,6 +36,8 @@ import BuildProgressModal from "./components/BuildProgressModal";
 import BatchBuildProgressModal from "./components/BatchBuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
 import ArchForgeLogo from "./components/ArchForgeLogo";
+import SystemCleanupTab from "./components/SystemCleanupTab";
+import AutoCleanupDaemon from "./components/AutoCleanupDaemon";
 import { playCompilationSuccessSound } from "./utils/audioHelper";
 
 import FlowingBackground from "./components/FlowingBackground";
@@ -56,7 +58,7 @@ const THEME_PRESETS: ThemePreset[] = [
     darkBg: "#0b0e14",
     lightBg: "#f4f6f9",
     defaultAccent: "#22d3ee",
-    orbs: ["bg-indigo-600/10", "bg-cyan-600/5", "bg-violet-600/5"]
+    orbs: ["bg-indigo-600/30", "bg-cyan-600/20", "bg-violet-600/20"]
   },
   {
     id: "matrix",
@@ -64,7 +66,7 @@ const THEME_PRESETS: ThemePreset[] = [
     darkBg: "#020804",
     lightBg: "#f0f7f2",
     defaultAccent: "#10b981",
-    orbs: ["bg-emerald-600/10", "bg-green-600/5", "bg-teal-600/5"]
+    orbs: ["bg-emerald-600/30", "bg-green-600/20", "bg-teal-600/20"]
   },
   {
     id: "cyberpunk",
@@ -72,7 +74,7 @@ const THEME_PRESETS: ThemePreset[] = [
     darkBg: "#0f0b21",
     lightBg: "#faf1f7",
     defaultAccent: "#ec4899",
-    orbs: ["bg-pink-600/10", "bg-fuchsia-600/5", "bg-indigo-600/5"]
+    orbs: ["bg-pink-600/30", "bg-fuchsia-600/20", "bg-indigo-600/20"]
   },
   {
     id: "nordic",
@@ -80,7 +82,7 @@ const THEME_PRESETS: ThemePreset[] = [
     darkBg: "#080f1e",
     lightBg: "#edf3f8",
     defaultAccent: "#3b82f6",
-    orbs: ["bg-blue-600/10", "bg-sky-600/5", "bg-indigo-600/5"]
+    orbs: ["bg-blue-600/30", "bg-sky-600/20", "bg-indigo-600/20"]
   },
   {
     id: "warm-autumn",
@@ -88,14 +90,14 @@ const THEME_PRESETS: ThemePreset[] = [
     darkBg: "#120e0b",
     lightBg: "#fcf8f2",
     defaultAccent: "#f59e0b",
-    orbs: ["bg-amber-600/10", "bg-orange-600/5", "bg-rose-500/5"]
+    orbs: ["bg-amber-600/30", "bg-orange-600/20", "bg-rose-500/20"]
   }
 ];
 
 export default function App() {
   const [installedPackages, setInstalledPackages] = useState<InstalledPackage[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli" | "cleanup">("dashboard");
 
   // Theme & Custom Accent Color States
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
@@ -495,6 +497,7 @@ export default function App() {
     <div className="min-h-screen text-slate-200 font-sans flex flex-col p-4 md:p-6 lg:p-8 relative overflow-hidden transition-colors duration-300">
       {/* Flowing animated background reacting to the active theme */}
       <FlowingBackground orbs={orbs} accentColor={accentColor} />
+      <AutoCleanupDaemon />
 
       {/* Global Application Header Navigation Layout */}
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-5">
@@ -516,11 +519,12 @@ export default function App() {
         {/* Outer Tab control links with glass-pill theme and Settings toggle button */}
         <div className="flex items-center gap-2">
           <div className="flex gap-1.5 glass-pill-container p-1 rounded-xl">
-            {(["dashboard", "explore", "cli"] as const).map((tab) => {
+            {(["dashboard", "explore", "cli", "cleanup"] as const).map((tab) => {
               const icons = {
                 dashboard: <Activity className="h-4 w-4" />,
                 explore: <Search className="h-4 w-4" />,
-                cli: <TerminalIcon className="h-4 w-4" />
+                cli: <TerminalIcon className="h-4 w-4" />,
+                cleanup: <Trash2 className="h-4 w-4" />
               };
               return (
                 <button
@@ -1087,6 +1091,18 @@ export default function App() {
                   onRunSyu={handleSyuTrigger}
                   installedPackages={installedPackages}
                 />
+              </motion.div>
+            )}
+
+            {activeTab === "cleanup" && (
+              <motion.div
+                key="cleanup"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SystemCleanupTab />
               </motion.div>
             )}
 

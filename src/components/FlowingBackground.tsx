@@ -68,7 +68,7 @@ export default function FlowingBackground({ orbs, accentColor }: FlowingBackgrou
       <div 
         className="absolute inset-0 pointer-events-none -z-10"
         style={{
-          background: `radial-gradient(circle at center, rgba(${accentRgb}, 0.03), transparent)`
+          background: `radial-gradient(circle at center, rgba(${accentRgb}, 0.08), transparent)`
         }}
       />
     </>

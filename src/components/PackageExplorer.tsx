@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Search, Loader2, Sparkles, SlidersHorizontal, Vote, ArrowRight, CheckCircle2, AlertTriangle, Calendar, Clock, ChevronLeft, ChevronRight, CheckSquare, Check, Layers, Play, Undo2 } from "lucide-react";
 import { AurSearchResult, InstalledPackage } from "../types";
 import { playIndexerCompleteSound } from "../utils/audioHelper";
@@ -198,7 +198,7 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
   }, [debouncedQuery, indexStatus.indexedCount]);
 
   // Filters results locally according to active tabs
-  const filteredResults = results.filter(pkg => {
+  const filteredResults = useMemo(() => results.filter(pkg => {
     const isLocal = installedPackages.some(ip => ip.name.toLowerCase() === pkg.Name?.toLowerCase() || ip.name.toLowerCase() === pkg.name?.toLowerCase());
     const localPkg = installedPackages.find(ip => ip.name.toLowerCase() === pkg.Name?.toLowerCase() || ip.name.toLowerCase() === pkg.name?.toLowerCase());
 
@@ -215,10 +215,10 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
       return isLocal && localPkg?.hasUpdate;
     }
     return true;
-  });
+  }), [results, installedPackages, activeTab]);
 
   // Sort matched rows and filter by Abandoned state
-  const processedResults = filteredResults
+  const processedResults = useMemo(() => filteredResults
     .filter(pkg => {
       const lastMod = pkg.LastModified || pkg.lastModified;
       const isAbandoned = lastMod ? (Date.now() / 1000 - lastMod) > 180 * 24 * 3600 : false;
@@ -249,7 +249,7 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
         return nameA.localeCompare(nameB);
       }
       return 0;
-    });
+    }), [filteredResults, filterAbandoned, sortKey]);
 
   return (
     <div className="flex h-full flex-col rounded-xl p-5 glass-panel">
