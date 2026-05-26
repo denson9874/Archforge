@@ -4,6 +4,7 @@ import { exec as cpExec, spawn as cpSpawn, execSync as cpExecSync } from "child_
 import os from "os";
 import fs from "fs";
 import { promisify } from "util";
+import { GoogleGenAI } from "@google/genai";
 
 // Get pristine host environment by purging environment variables contaminated by AppImage wrapper
 function getCleanEnv(): NodeJS.ProcessEnv {
@@ -92,6 +93,41 @@ fi
   };
 
   return { wrapperPath: wrapperDir, cleanup };
+}
+
+// Security Validation and Sanitization Routines
+function isSafePackageName(name: string): boolean {
+  if (!name || typeof name !== "string") return false;
+  if (name.length > 128) return false;
+  if (name === "system-upgrade") return true;
+  const regex = /^[a-zA-Z0-9@+_][a-zA-Z0-9@+_\.-]*$/;
+  return regex.test(name);
+}
+
+function isSafeVersionString(version: string): boolean {
+  if (!version || typeof version !== "string") return false;
+  if (version.length > 64) return false;
+  const regex = /^[a-zA-Z0-9\.:@+_-]+$/;
+  return regex.test(version);
+}
+
+function isSafeUrl(url: string | undefined): boolean {
+  if (!url) return true;
+  if (url.length > 256) return false;
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch {
+    const regex = /^[a-zA-Z0-9\.-]+\.[a-zA-Z]{2,}(?:\/.*)?$/;
+    return regex.test(url);
+  }
+}
+
+function truncateAndSanitize(val: any, maxLength: number = 256): string {
+  if (val === undefined || val === null) return "";
+  const str = String(val);
+  const clean = str.replace(/[\x00-\x1F\x7F-\x9F]/g, "").replace(/<[^>]*>?/gm, "");
+  return clean.slice(0, maxLength);
 }
 
 // Interfaces
@@ -642,6 +678,27 @@ async function startServer() {
       return res.status(400).json({ error: "Package name is required" });
     }
 
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+
+    if (version && !isSafeVersionString(version)) {
+      return res.status(400).json({ error: "Invalid or unsafe version string" });
+    }
+
+    if (url && !isSafeUrl(url)) {
+      return res.status(400).json({ error: "Invalid or unsafe URL format" });
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+    const sanitizedVersion = truncateAndSanitize(version, 64) || "1.0.0-1";
+    const validatedRepo = (["core", "extra", "multilib", "aur"].includes(repo) ? repo : "aur") as "core" | "extra" | "multilib" | "aur";
+    const sanitizedDesc = truncateAndSanitize(description, 512) || "User-installed package from AUR";
+    const sanitizedSize = truncateAndSanitize(size, 32) || "45.0 MB";
+    const sanitizedMaintainer = truncateAndSanitize(maintainer, 128) || "unknown-maintainer";
+    const sanitizedLicense = truncateAndSanitize(license, 128) || "GPL";
+    const sanitizedUrl = truncateAndSanitize(url, 256) || "";
+
     if (isRealArch) {
       // Clear host cache so the newly compiled package registers on first refresh
       cachedPackages = [];
@@ -649,28 +706,28 @@ async function startServer() {
       return res.json({ success: true, message: "Package cleared for physical local db sync" });
     }
 
-    const existingIndex = installedPackages.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+    const existingIndex = installedPackages.findIndex(p => p.name.toLowerCase() === sanitizedName.toLowerCase());
     const isUpdate = existingIndex !== -1;
 
     const baseHistory = isUpdate ? (installedPackages[existingIndex].history || []) : [];
     if (isUpdate && !baseHistory.includes(installedPackages[existingIndex].version)) {
       baseHistory.unshift(installedPackages[existingIndex].version);
     }
-    if (!baseHistory.includes(version || "1.0.0-1")) {
-      baseHistory.unshift(version || "1.0.0-1");
+    if (!baseHistory.includes(sanitizedVersion)) {
+      baseHistory.unshift(sanitizedVersion);
     }
 
     const newPkg: InstalledPackage = {
-      name,
-      version: version || "1.0.0-1",
-      repo: repo || "aur",
-      description: description || "User-installed package from AUR",
+      name: sanitizedName,
+      version: sanitizedVersion,
+      repo: validatedRepo,
+      description: sanitizedDesc,
       installedAt: new Date().toISOString(),
-      size: size || "45.0 MB",
+      size: sanitizedSize,
       health: "healthy",
-      maintainer: maintainer || "unknown-maintainer",
-      license: license || "GPL",
-      url: url || "",
+      maintainer: sanitizedMaintainer,
+      license: sanitizedLicense,
+      url: sanitizedUrl,
       hasUpdate: false,
       history: baseHistory.slice(0, 5)
     };
@@ -691,11 +748,17 @@ async function startServer() {
       return res.status(400).json({ error: "Package name is required" });
     }
 
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+
     if (isRealArch) {
       try {
-        console.log(`[ArchForge] Invoking pkexec/sudo to uninstall ${name}...`);
+        console.log(`[ArchForge] Invoking pkexec/sudo to uninstall ${sanitizedName}...`);
         if (pw) {
-          const child = spawn("sudo", ["-S", "pacman", "-Rns", "--noconfirm", name]);
+          const child = spawn("sudo", ["-S", "pacman", "-Rns", "--noconfirm", sanitizedName]);
           child.stdin.write(pw + "\n");
           child.stdin.end();
           
@@ -711,17 +774,7 @@ async function startServer() {
             });
           });
         } else {
-          const child = spawn("pkexec", ["pacman", "-Rns", "--noconfirm", name]);
-
-          let errStr = "";
-          child.stderr.on("data", (data) => errStr += data);
-
-          await new Promise<void>((resolve, reject) => {
-            child.on("close", (code) => {
-              if (code === 0) resolve();
-              else reject(new Error(`pkexec pacman -Rns failed with code ${code}. Stderr: ${errStr}`));
-            });
-          });
+          await execAsync(`pkexec pacman -Rns --noconfirm ${sanitizedName}`);
         }
         cachedPackages = [];
         lastCacheUpdate = 0;
@@ -732,7 +785,7 @@ async function startServer() {
       }
     }
 
-    const index = installedPackages.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+    const index = installedPackages.findIndex(p => p.name.toLowerCase() === sanitizedName.toLowerCase());
     if (index === -1) {
       return res.status(404).json({ error: "Package not found in local system" });
     }
@@ -748,19 +801,30 @@ async function startServer() {
       return res.status(400).json({ error: "Package name and targetVersion are required" });
     }
 
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+
+    if (!isSafeVersionString(targetVersion)) {
+      return res.status(400).json({ error: "Invalid or unsafe version string" });
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+    const sanitizedVersion = truncateAndSanitize(targetVersion, 64);
+
     if (isRealArch) {
       return res.json({ success: true, message: "Direct package downgrades initialized locally from local package cache." });
     }
 
-    const pkg = installedPackages.find(p => p.name.toLowerCase() === name.toLowerCase());
+    const pkg = installedPackages.find(p => p.name.toLowerCase() === sanitizedName.toLowerCase());
     if (!pkg) {
       return res.status(404).json({ error: "Package not found in local database" });
     }
 
-    pkg.version = targetVersion;
+    pkg.version = sanitizedVersion;
     pkg.health = "healthy";
-    pkg.healthDetails = `Rolled back and pinned to version ${targetVersion} for stability.`;
-    pkg.pinnedVersion = targetVersion;
+    pkg.healthDetails = `Rolled back and pinned to version ${sanitizedVersion} for stability.`;
+    pkg.pinnedVersion = sanitizedVersion;
 
     res.json({ success: true, package: pkg });
   });
@@ -772,7 +836,13 @@ async function startServer() {
       return res.status(400).json({ error: "Package name is required" });
     }
 
-    const pkg = installedPackages.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+
+    const pkg = installedPackages.find(p => p.name.toLowerCase() === sanitizedName.toLowerCase());
     if (!pkg) {
       return res.status(404).json({ error: "Package not found in local database" });
     }
@@ -1047,9 +1117,13 @@ StartupWMClass=ArchForge
     if (!name || !password) {
       return res.status(400).json({ error: "Package name and Sudo password are required" });
     }
-    const proc = activeProcesses.get(name);
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+    const sanitizedName = truncateAndSanitize(name, 128);
+    const proc = activeProcesses.get(sanitizedName);
     if (proc && proc.stdin) {
-      console.log(`[ArchForge Authenticator] Writing credentials to stdin for active process: ${name}`);
+      console.log(`[ArchForge Authenticator] Writing credentials to stdin for active process: ${sanitizedName}`);
       proc.stdin.write(password + "\n");
       return res.json({ success: true, message: "Credentials successfully wrote to terminal stdin." });
     } else {
@@ -1070,6 +1144,15 @@ StartupWMClass=ArchForge
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    if (!isSafePackageName(name)) {
+      res.write(`data: ${JSON.stringify({ line: "error: Invalid or unsafe package name specified" })}\n\n`);
+      res.write("event: end\ndata: \n\n");
+      res.end();
+      return;
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+
     const sendLine = (text: string) => {
       res.write(`data: ${JSON.stringify({ line: text })}\n\n`);
     };
@@ -1077,16 +1160,16 @@ StartupWMClass=ArchForge
     if (!isRealArch) {
       // Trigger a beautiful, gradual live compile mock streaming fallback for visual presentation
       sendLine(`==> Synchronizing packages and build files...`);
-      sendLine(`  -> Resolving build targets for virtual package: ${name}`);
+      sendLine(`  -> Resolving build targets for virtual package: ${sanitizedName}`);
       const mockLines = [
         `==> Found dependencies in virtual database...`,
-        `==> Downloading sources for package ${name}...`,
+        `==> Downloading sources for package ${sanitizedName}...`,
         `  -> Cloning git workspace repository...`,
         `==> Validating integrity check-sums with SHA256 integrity checkers...`,
         `  -> sha255sum: PASSED with zero build discrepancies`,
         `==> Launching multi-thread software build pipeline...`,
         `  -> Running build tools: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`,
-        `  -> g++ -O3 -march=native -pipe -flto -shared -fPIC -pthread -o ${name} src/main.cpp`,
+        `  -> g++ -O3 -march=native -pipe -flto -shared -fPIC -pthread -o ${sanitizedName} src/main.cpp`,
         `  [########################################] 100% compiled successfully`,
         `==> Finalizing installation inside pacman system register...`,
         `  -> Registering ${name} inside pacman database filesystem records`,
@@ -1108,9 +1191,9 @@ StartupWMClass=ArchForge
     }
 
     // Direct AUR compilation workflow executing on physical bare-metal hardware!
-    sendLine(`==> [ArchForge Native Engine] Dispatching build pipeline for: ${name}`);
+    sendLine(`==> [ArchForge Native Engine] Dispatching build pipeline for: ${sanitizedName}`);
 
-    if (name === "system-upgrade") {
+    if (sanitizedName === "system-upgrade") {
       sendLine(`==> [ArchForge System Upgrade] Initializing full base-system upgrade...`);
       sendLine(`==> Authentication prompts may request permission to run system update operations.`);
       
@@ -1123,8 +1206,16 @@ StartupWMClass=ArchForge
       const packagesParam = req.query.packages as string;
       if (packagesParam) {
         const pkgs = packagesParam.split(",").map(p => p.trim()).filter(Boolean);
+        for (const pkg of pkgs) {
+          if (!isSafePackageName(pkg)) {
+            sendLine(`error: Invalid or unsafe package name in packages list: ${pkg}`);
+            res.write("event: end\ndata: \n\n");
+            res.end();
+            return;
+          }
+        }
         if (pkgs.length > 0) {
-          execArgs = ["pacman", "-Sy", "--noconfirm", ...pkgs];
+          execArgs = ["pacman", "-Sy", "--noconfirm", ...pkgs.map(p => truncateAndSanitize(p, 128))];
         }
       }
 
@@ -1171,7 +1262,7 @@ StartupWMClass=ArchForge
       return;
     }
 
-    const buildWorkspace = path.join(os.tmpdir(), "archforge-builds", name);
+    const buildWorkspace = path.join(os.tmpdir(), "archforge-builds", sanitizedName);
 
     try {
       // 1. Clean and configure fresh temporary build directory on root filesystem
@@ -1187,7 +1278,7 @@ StartupWMClass=ArchForge
 
       // 2. Clone the official package repository from aur.archlinux.org
       sendLine(`==> Fetching PKGBUILD recipe from aur.archlinux.org...`);
-      const gitRef = spawn("git", ["clone", `https://aur.archlinux.org/${name}.git`, "."], { cwd: buildWorkspace });
+      const gitRef = spawn("git", ["clone", `https://aur.archlinux.org/${sanitizedName}.git`, "."], { cwd: buildWorkspace });
 
       gitRef.stdout.on("data", (data) => {
         sendLine(data.toString().trim());
@@ -1199,7 +1290,7 @@ StartupWMClass=ArchForge
 
       gitRef.on("close", (code) => {
         if (code !== 0) {
-          sendLine(`error: Failed to clone package ${name} from official AUR repos.`);
+          sendLine(`error: Failed to clone package ${sanitizedName} from official AUR repos.`);
           res.write("event: end\ndata: \n\n");
           res.end();
           return;
@@ -1239,7 +1330,7 @@ StartupWMClass=ArchForge
 
         function launchMakepkg() {
           const makepkg = spawn("makepkg", ["-si", "--noconfirm", "--needed"], authOpts);
-          activeProcesses.set(name, makepkg);
+          activeProcesses.set(sanitizedName, makepkg);
 
           let hasFakerootError = false;
 
@@ -1272,12 +1363,12 @@ StartupWMClass=ArchForge
           });
 
           makepkg.on("close", async (exitCode) => {
-            activeProcesses.delete(name);
+            activeProcesses.delete(sanitizedName);
             if (exitCode === 0) {
               if (wrapper) {
                 await wrapper.cleanup();
               }
-              sendLine(`==> [ArchForge] COMPILATION SUCCEEDED: Package '${name}' registered successfully on bare-metal database!`);
+              sendLine(`==> [ArchForge] COMPILATION SUCCEEDED: Package '${sanitizedName}' registered successfully on bare-metal database!`);
               // Clear memory cache so that installed lists are updated immediately
               cachedPackages = [];
               lastCacheUpdate = 0;
@@ -1362,19 +1453,62 @@ StartupWMClass=ArchForge
   });
 
   // 7. Real AUR RPC Proxy - Searches AUR with local indexing and caching
+  app.post("/api/aur/search/grounded", async (req, res) => {
+    try {
+      const dbType = req.body.query || "";
+      let sysPrompt = "You are an Arch Linux assistant. Fetch the latest official news and security advisories from Arch Linux.";
+      if (dbType) {
+        sysPrompt += ` The user searched for '${dbType}' but no local matches were found. Briefly tell them that their package wasn't found, then provide the latest Arch Linux news/security advisories as requested.`;
+      }
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: sysPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const sources = chunks.map((chunk: any) => chunk.web).filter(Boolean);
+
+      res.json({
+        success: true,
+        text: response.text,
+        sources
+      });
+    } catch (e: any) {
+      console.error("Grounded Search API error:", e);
+      res.status(500).json({ error: e.message || "Failed to fetch grounded results" });
+    }
+  });
+
   app.get("/api/aur/search", async (req, res) => {
-    const rawQuery = req.query.q;
-    const query = typeof rawQuery === "string" ? rawQuery : "";
+    const query = req.query.q as string;
     
+    if (query && query.length > 128) {
+      return res.status(400).json({ error: "Search query exceeds length limits" });
+    }
+
+    const sanitizedQuery = query ? truncateAndSanitize(query, 128) : "";
+
     // Clean and search our extensive background database index
     let localMatches = [];
-    if (query && query.length >= 2) {
-      const qLower = query.toLowerCase();
+    if (sanitizedQuery && sanitizedQuery.length >= 2) {
+      const qLower = sanitizedQuery.toLowerCase();
       localMatches = aurDatabaseIndex.filter(p => 
         (p.Name && p.Name.toLowerCase().includes(qLower)) || 
         (p.Description && p.Description.toLowerCase().includes(qLower))
       );
-    } else if (!query || query.trim() === "") {
+    } else if (!sanitizedQuery || sanitizedQuery.trim() === "") {
       // Return the entire cached list if empty query (perfect for bulk sorting list views!)
       return res.json({ results: aurDatabaseIndex });
     } else {
@@ -1382,7 +1516,7 @@ StartupWMClass=ArchForge
     }
 
     try {
-      const url = `https://aur.archlinux.org/rpc/?v=5&type=search&arg=${encodeURIComponent(query)}`;
+      const url = `https://aur.archlinux.org/rpc/?v=5&type=search&arg=${encodeURIComponent(sanitizedQuery)}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`AUR returned status ${response.status}`);
@@ -1491,8 +1625,14 @@ StartupWMClass=ArchForge
       return res.status(400).json({ error: "Package name is required" });
     }
 
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+
     try {
-      const url = `https://aur.archlinux.org/rpc/?v=5&type=info&arg[]=${encodeURIComponent(name)}`;
+      const url = `https://aur.archlinux.org/rpc/?v=5&type=info&arg[]=${encodeURIComponent(sanitizedName)}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`AUR returned status ${response.status}`);
@@ -1575,8 +1715,14 @@ StartupWMClass=ArchForge
       return res.status(400).json({ error: "Package name is required" });
     }
 
+    if (!isSafePackageName(name)) {
+      return res.status(400).json({ error: "Invalid or unsafe package name" });
+    }
+
+    const sanitizedName = truncateAndSanitize(name, 128);
+
     try {
-      const url = `https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=${encodeURIComponent(name)}`;
+      const url = `https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=${encodeURIComponent(sanitizedName)}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`AUR status ${response.status}`);
@@ -1587,7 +1733,7 @@ StartupWMClass=ArchForge
       console.error("AUR PKGBUILD Error:", error.message);
       const generatedPKGBUILD = `# Maintainer: Arch User <aur-helper@internal>
 # Generated automatically by AUR Package Manager GUI
-pkgname=${name}
+pkgname=${sanitizedName}
 pkgver=1.2.3
 pkgrel=1
 pkgdesc="An optimized release of ${name} with production builds enabled"
@@ -1649,15 +1795,13 @@ package() {
   }
 
   // Bind server to port dynamically, automatically trying alternative ports if current port is occupied
-  const server = app.listen(PORT, "0.0.0.0");
-
-  server.on("listening", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
     (global as any).archforgePort = PORT;
   });
 
   server.on("error", (err: any) => {
-    if (err.code === "EADDRINUSE") {
+    if (err.code === "EADDRINUSE" && !isProd) {
       console.log(`⚠️ Port ${PORT} is already in use. Trying port ${PORT + 1}...`);
       PORT++;
       server.listen(PORT, "0.0.0.0");

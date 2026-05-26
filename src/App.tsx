@@ -35,9 +35,10 @@ import PackageDetailDrawer from "./components/PackageDetailDrawer";
 import BuildProgressModal from "./components/BuildProgressModal";
 import BatchBuildProgressModal from "./components/BatchBuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
-import AICopilot from "./components/AICopilot";
 import ArchForgeLogo from "./components/ArchForgeLogo";
 import { playCompilationSuccessSound } from "./utils/audioHelper";
+
+import FlowingBackground from "./components/FlowingBackground";
 
 interface ThemePreset {
   id: "classic" | "matrix" | "cyberpunk" | "nordic" | "warm-autumn";
@@ -94,7 +95,7 @@ const THEME_PRESETS: ThemePreset[] = [
 export default function App() {
   const [installedPackages, setInstalledPackages] = useState<InstalledPackage[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli" | "ai">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "explore" | "cli">("dashboard");
 
   // Theme & Custom Accent Color States
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
@@ -492,11 +493,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen text-slate-200 font-sans flex flex-col p-4 md:p-6 lg:p-8 relative overflow-hidden transition-colors duration-300">
-      {/* Background stars look and cosmic border alignment with gorgeous glowing frosted orbs */}
-      <div className={`absolute top-[-200px] left-[-200px] w-[600px] h-[600px] ${orbs[0]} rounded-full blur-[120px] pointer-events-none -z-10 transition-all duration-700`}></div>
-      <div className={`absolute top-[30%] right-[-200px] w-[500px] h-[500px] ${orbs[1]} rounded-full blur-[100px] pointer-events-none -z-10 transition-all duration-700`}></div>
-      <div className={`absolute bottom-[-200px] left-[20%] w-[500px] h-[500px] ${orbs[2]} rounded-full blur-[120px] pointer-events-none -z-10 transition-all duration-700`}></div>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(var(--accent-rgb,6,182,212),0.02),transparent)] pointer-events-none -z-10"></div>
+      {/* Flowing animated background reacting to the active theme */}
+      <FlowingBackground orbs={orbs} accentColor={accentColor} />
 
       {/* Global Application Header Navigation Layout */}
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-5">
@@ -518,12 +516,11 @@ export default function App() {
         {/* Outer Tab control links with glass-pill theme and Settings toggle button */}
         <div className="flex items-center gap-2">
           <div className="flex gap-1.5 glass-pill-container p-1 rounded-xl">
-            {(["dashboard", "explore", "cli", "ai"] as const).map((tab) => {
+            {(["dashboard", "explore", "cli"] as const).map((tab) => {
               const icons = {
                 dashboard: <Activity className="h-4 w-4" />,
                 explore: <Search className="h-4 w-4" />,
-                cli: <TerminalIcon className="h-4 w-4" />,
-                ai: <Sparkles className="h-4 w-4 text-cyan-400" />
+                cli: <TerminalIcon className="h-4 w-4" />
               };
               return (
                 <button
@@ -1093,17 +1090,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === "ai" && (
-              <motion.div
-                key="ai"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.15 }}
-              >
-                <AICopilot />
-              </motion.div>
-            )}
+
           </AnimatePresence>
         </main>
 

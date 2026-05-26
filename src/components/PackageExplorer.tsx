@@ -3,6 +3,8 @@ import { Search, Loader2, Sparkles, SlidersHorizontal, Vote, ArrowRight, CheckCi
 import { AurSearchResult, InstalledPackage } from "../types";
 import { playIndexerCompleteSound } from "../utils/audioHelper";
 
+import SearchGroundingResult from "./SearchGroundingResult";
+
 interface PackageExplorerProps {
   onSelectPackage: (name: string, isAur: boolean) => void;
   installedPackages: InstalledPackage[];
@@ -630,9 +632,10 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
                 <div className="flex flex-col items-center justify-center rounded-xl p-12 text-center glass-panel">
                   <SlidersHorizontal className="mb-3 h-10 w-10 text-zinc-500" />
                   <h4 className="text-sm font-semibold text-slate-200">No matching repositories found</h4>
-                  <p className="max-w-xs text-xs text-zinc-500 mt-1">
+                  <p className="max-w-md text-xs text-zinc-500 mt-1 mb-4">
                     Verify your package name spelling, index sorting selectors, or trigger "Update Index" to retrieve the latest definitions.
                   </p>
+                  {debouncedQuery.trim().length >= 2 && <SearchGroundingResult query={debouncedQuery} />}
                 </div>
               )}
             </div>
