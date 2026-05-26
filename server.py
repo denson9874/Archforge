@@ -8,6 +8,7 @@ import threading
 import subprocess
 import urllib.request
 import urllib.parse
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Global State
@@ -1435,9 +1436,14 @@ StartupWMClass=ArchForge
             exec_args = ["pacman", "-Syu", "--noconfirm"]
             pkgs_param = query.get("packages", [""])[0]
             if pkgs_param:
-                pkgs = [x.strip() for x in pkgs_param.split(",") if x.strip()]
-                if pkgs:
-                    exec_args = ["pacman", "-Sy", "--noconfirm"] + pkgs
+                raw_pkgs = [x.strip() for x in pkgs_param.split(",") if x.strip()]
+                pkg_name_pattern = re.compile(r"^[A-Za-z0-9@._+-]+$")
+                invalid_pkgs = [p for p in raw_pkgs if not pkg_name_pattern.fullmatch(p) or p.startswith("-")]
+                if invalid_pkgs:
+                    self.send_error(400, "Invalid package name(s) in request")
+                    return
+                if raw_pkgs:
+                    exec_args = ["pacman", "-Sy", "--noconfirm"] + raw_pkgs
                     
             executable = "pkexec"
             cust_env = get_clean_env()
