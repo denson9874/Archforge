@@ -420,7 +420,7 @@ export default function BatchBuildProgressModal({
       const res = await fetch("/api/system/sudo-auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: sudoPwInput })
+        body: JSON.stringify({ name: packages[currentIdx], password: sudoPwInput })
       });
       const data = await res.json();
       if (data.success) {

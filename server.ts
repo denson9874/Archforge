@@ -1230,6 +1230,11 @@ StartupWMClass=ArchForge
       return res.status(400).json({ error: "Invalid or unsafe package name" });
     }
     const sanitizedName = truncateAndSanitize(name, 128);
+    if (!isRealArch) {
+      // In simulation mode, accept any password and return success.
+      return res.json({ success: true, message: "Simulation authentication succeeded." });
+    }
+
     const proc = activeProcesses.get(sanitizedName);
     if (proc && proc.stdin) {
       console.log(`[ArchForge Authenticator] Writing credentials to stdin for active process: ${sanitizedName}`);
