@@ -1442,6 +1442,16 @@ StartupWMClass=ArchForge
                 if invalid_pkgs:
                     self.send_error(400, "Invalid package name(s) in request")
                     return
+                allowed_packages = {
+                    "base", "base-devel", "linux", "linux-firmware", "vim", "nano",
+                    "git", "curl", "wget", "openssh", "python", "python-pip",
+                    "nodejs", "npm", "docker", "docker-compose", "firefox",
+                    "chromium", "htop", "tmux", "neovim"
+                }
+                disallowed_pkgs = [p for p in raw_pkgs if p not in allowed_packages]
+                if disallowed_pkgs:
+                    self.send_error(400, "One or more requested packages are not allowed")
+                    return
                 if raw_pkgs:
                     exec_args = ["pacman", "-Sy", "--noconfirm"] + raw_pkgs
                     
