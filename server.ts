@@ -250,7 +250,7 @@ async function runFullAURIndexing() {
     let updated = 0;
     
     // Process INDEX_KEYWORDS in chunks of 8 parallel requests to build the entire index list
-    const chunkSize = 8;
+    const chunkSize = 64;
     for (let i = 0; i < INDEX_KEYWORDS.length; i += chunkSize) {
       const chunk = INDEX_KEYWORDS.slice(i, i + chunkSize);
       
@@ -306,7 +306,7 @@ async function runFullAURIndexing() {
       }
       
       // Yield execution thread gently to allow server to reply to client fast
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 5));
     }
     
     // Sort packages by Popularity then NumVotes descending
@@ -1186,7 +1186,7 @@ StartupWMClass=ArchForge
           clearInterval(interval);
           res.end();
         }
-      }, 450);
+      }, 25);
       return;
     }
 

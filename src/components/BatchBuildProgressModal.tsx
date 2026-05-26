@@ -206,7 +206,7 @@ export default function BatchBuildProgressModal({
         // Proceed to next package or finish
         setTimeout(() => {
           moveToNextOrFinish();
-        }, 1500);
+        }, 300);
       });
 
       eventSource.onerror = () => {
@@ -227,7 +227,7 @@ export default function BatchBuildProgressModal({
     function startVirtualSimulator() {
       let currentStepIdx = 0;
       let lineIdx = 0;
-      const lineInterval = 30; // Speed up slightly for faster batch testing
+      const lineInterval = 5; // Speed up slightly for faster batch testing
 
       const processNextLine = async () => {
         if (!active) return;
@@ -253,7 +253,7 @@ export default function BatchBuildProgressModal({
           // Proceed to next package or finish
           setTimeout(() => {
             moveToNextOrFinish();
-          }, 1200);
+          }, 300);
           return;
         }
 
@@ -311,8 +311,8 @@ export default function BatchBuildProgressModal({
               // Proceed with compilation cleanly from this point
               lineIdx++;
               setTimeout(processNextLine, lineInterval);
-            }, 2000);
-          }, 1500);
+            }, 500);
+          }, 500);
 
           return; // pause standard steps loop
         }
@@ -343,7 +343,7 @@ export default function BatchBuildProgressModal({
               ];
               setLogs([...logBuffer]);
               setTimeout(processNextLine, lineInterval);
-            }, 2000);
+            }, 500);
 
             return; // Pause simulation loop while waiting for admin key in terminal
           }
@@ -361,11 +361,11 @@ export default function BatchBuildProgressModal({
         } else {
           currentStepIdx++;
           lineIdx = 0;
-          setTimeout(processNextLine, 150);
+          setTimeout(processNextLine, 10);
         }
       };
 
-      setTimeout(processNextLine, 200);
+      setTimeout(processNextLine, 10);
     }
 
     const moveToNextOrFinish = () => {
