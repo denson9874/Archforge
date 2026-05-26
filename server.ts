@@ -1353,7 +1353,8 @@ StartupWMClass=ArchForge
 
   // 7. Real AUR RPC Proxy - Searches AUR with local indexing and caching
   app.get("/api/aur/search", async (req, res) => {
-    const query = req.query.q as string;
+    const rawQuery = req.query.q;
+    const query = typeof rawQuery === "string" ? rawQuery : "";
     
     // Clean and search our extensive background database index
     let localMatches = [];
