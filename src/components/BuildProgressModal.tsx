@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Terminal, ShieldCheck, Loader2, Play, CircleAlert, CheckCircle2, Award, Info, Lock } from "lucide-react";
 import { generateBuildSteps } from "../utils/buildLogGenerator";
+import { estimateBuildTimeSeconds, formatEstimatedTime } from "../utils/buildTimeEstimator";
 
 interface BuildProgressModalProps {
   pkgName: string;
   pkgVersion: string;
   depends?: string[];
+  pkgSize?: string;
   onComplete: () => void;
   onCancel: () => void;
   isRealArch?: boolean;
@@ -15,6 +17,7 @@ export default function BuildProgressModal({
   pkgName,
   pkgVersion,
   depends = [],
+  pkgSize,
   onComplete,
   onCancel,
   isRealArch
@@ -61,6 +64,16 @@ export default function BuildProgressModal({
   const [currentPhase, setCurrentPhase] = useState("");
   const [percentage, setPercentage] = useState(0);
   const [complete, setComplete] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (complete || needsAuth || systemRealArch === null) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [complete, needsAuth, systemRealArch]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-Healer custom states
@@ -291,6 +304,12 @@ export default function BuildProgressModal({
     }
   }, [logs]);
 
+  // Analyze package size and dependency count to estimate build time
+  const estSeconds = estimateBuildTimeSeconds(pkgName, pkgSize, depends.length);
+  const estTimeStr = formatEstimatedTime(estSeconds);
+  const remainingSeconds = Math.max(0, estSeconds - elapsedSeconds);
+  const remainingTimeStr = formatEstimatedTime(remainingSeconds);
+
   if (systemRealArch === null) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md select-none animate-fadeIn">
@@ -401,12 +420,17 @@ export default function BuildProgressModal({
               </h3>
               <p className="text-xs text-zinc-400 font-mono mt-0.5">
                 makepkg toolchain: <span className="text-cyan-400 font-bold">{pkgName} {pkgVersion}</span>
+                {pkgSize && (
+                  <span className="text-zinc-500 text-[11px] ml-1.5 font-normal">
+                    ({pkgSize}, {depends?.length || 0} {depends?.length === 1 ? "dep" : "deps"})
+                  </span>
+                )}
               </p>
             </div>
           </div>
 
           {/* Quick Metrics Indicators */}
-          <div className="flex gap-4 text-xs font-mono text-slate-400 mt-2 md:mt-0 bg-white/3 px-4 py-2 rounded-lg border border-white/5">
+          <div className="flex gap-4 text-xs font-mono text-slate-400 mt-2 md:mt-0 bg-white/3 px-4 py-2 rounded-lg border border-white/5 items-center">
             <div>
               <span className="block text-[9px] uppercase tracking-wider text-slate-500">Active Phase</span>
               <span className="text-[#22d3ee] font-semibold truncate block max-w-[130px]">{currentPhase}</span>
@@ -415,6 +439,21 @@ export default function BuildProgressModal({
             <div>
               <span className="block text-[9px] uppercase tracking-wider text-slate-500">Total System Threads</span>
               <span className="text-slate-200 font-semibold block">8 Parallel Jobs</span>
+            </div>
+            <div className="h-8 w-px bg-white/5"></div>
+            <div>
+              <span className="block text-[9px] uppercase tracking-wider text-slate-500">Est. Build Time</span>
+              <span className="text-amber-400 font-semibold block">
+                {complete ? (
+                  <span className="text-emerald-400 font-extrabold flex items-center gap-1">
+                    Done ({formatEstimatedTime(elapsedSeconds)})
+                  </span>
+                ) : (
+                  <span>
+                    {remainingTimeStr} left <span className="text-[10px] text-zinc-500 font-normal">({estTimeStr} tot)</span>
+                  </span>
+                )}
+              </span>
             </div>
           </div>
         </div>

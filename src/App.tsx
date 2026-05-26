@@ -1127,6 +1127,7 @@ export default function App() {
              pkgName={compilingPackage.Name || compilingPackage.name}
              pkgVersion={compilingPackage.Version || compilingPackage.version || "1.0.0-1"}
              depends={compilingPackage.Depends || compilingPackage.depends || []}
+             pkgSize={compilingPackage.size || compilingPackage.Size || "45.0 MB"}
              onComplete={handleCompilationSuccess}
              onCancel={() => setCompilingPackage(null)}
              isRealArch={stats?.isRealArch}
@@ -1162,6 +1163,7 @@ export default function App() {
              pkgName="system-upgrade"
              pkgVersion="aur-syu"
              depends={selectedUpgradeNames}
+             pkgSize={`${selectedUpgradeNames.length * 30} MB`}
              onComplete={handleSyuCompilationSuccess}
              onCancel={() => setIsSyuUpgrade(false)}
              isRealArch={stats?.isRealArch}

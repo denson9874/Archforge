@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Terminal, ShieldCheck, Loader2, Play, CircleAlert, CheckCircle2, Award, Info, Lock, Layers, Check, XCircle, Download } from "lucide-react";
 import { generateBuildSteps } from "../utils/buildLogGenerator";
 import { playCompilationSuccessSound } from "../utils/audioHelper";
+import { estimateBuildTimeSeconds, formatEstimatedTime } from "../utils/buildTimeEstimator";
 
 interface BatchBuildProgressModalProps {
   packages: any[]; // Array of selected packages
@@ -75,6 +76,20 @@ export default function BatchBuildProgressModal({
   const [currentPhase, setCurrentPhase] = useState("");
   const [percentage, setPercentage] = useState(0);
   const [batchComplete, setBatchComplete] = useState(false);
+  const [activePkgElapsedSeconds, setActivePkgElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (batchComplete || needsAuth || systemRealArch === null) return;
+    const interval = setInterval(() => {
+      setActivePkgElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [batchComplete, needsAuth, systemRealArch]);
+
+  useEffect(() => {
+    setActivePkgElapsedSeconds(0);
+  }, [currentIdx]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-Healer custom states
@@ -536,6 +551,29 @@ export default function BatchBuildProgressModal({
     URL.revokeObjectURL(url);
   };
 
+  // Analyze package size and dependency count to estimate active package build time and total queue remaining time
+  const currentPkgSize = currentPkg?.size || currentPkg?.Size || "45.0 MB";
+  const currentPkgEstSeconds = estimateBuildTimeSeconds(pkgName, currentPkgSize, depends?.length || 0);
+  const currentPkgEstTimeStr = formatEstimatedTime(currentPkgEstSeconds);
+  const currentPkgRemainingSeconds = Math.max(0, currentPkgEstSeconds - activePkgElapsedSeconds);
+  const currentPkgRemainingTimeStr = formatEstimatedTime(currentPkgRemainingSeconds);
+
+  let totalRemainingEstSeconds = 0;
+  packages.forEach((pkg, idx) => {
+    if (statuses[idx] === "queued" || statuses[idx] === "compiling") {
+      const pName = pkg.Name || pkg.name;
+      const pSize = pkg.size || pkg.Size || "45.0 MB";
+      const pDeps = pkg.Depends || pkg.depends || [];
+      const pEst = estimateBuildTimeSeconds(pName, pSize, pDeps.length);
+      if (statuses[idx] === "compiling") {
+        totalRemainingEstSeconds += Math.max(0, pEst - activePkgElapsedSeconds);
+      } else {
+        totalRemainingEstSeconds += pEst;
+      }
+    }
+  });
+  const totalRemainingEstTimeStr = formatEstimatedTime(totalRemainingEstSeconds);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md select-none animate-fadeIn overflow-y-auto">
       <div className="relative w-full max-w-5xl rounded-2xl p-6 glass-panel border border-white/10 shadow-2xl flex flex-col justify-between my-auto">
@@ -566,11 +604,14 @@ export default function BatchBuildProgressModal({
                 <span className="text-zinc-500 uppercase">Overall Batch State:</span>
                 <span className="text-cyan-400 font-bold">{overallProgressPercentage}%</span>
               </div>
-              <div className="h-1.5 w-40 bg-zinc-950/40 rounded-full overflow-hidden border border-white/5">
+              <div className="h-1.5 w-40 bg-zinc-950/40 rounded-full overflow-hidden border border-white/5 mb-0.5">
                 <div 
                   className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500 transition-all duration-300"
                   style={{ width: `${overallProgressPercentage}%` }}
                 />
+              </div>
+              <div className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
+                ⏱️ Queue Est: {totalRemainingEstTimeStr} remaining
               </div>
             </div>
           )}
@@ -724,9 +765,10 @@ export default function BatchBuildProgressModal({
               )}
 
               <div className="flex items-center justify-between text-xs font-mono text-zinc-500">
-                <span className="flex items-center gap-1.5 font-bold">
+                <span className="flex items-center gap-1.5 font-bold flex-wrap">
                   <Terminal className="h-3.5 w-3.5 text-cyan-500" /> 
-                  {pkgName}: makepkg -sri shell log
+                  <span>{pkgName} ({currentPkgSize}): makepkg shell log</span>
+                  <span className="text-[10px] text-amber-500 font-normal">({currentPkgRemainingTimeStr} left / {currentPkgEstTimeStr} tot)</span>
                 </span>
                 <span>Progress: {percentage}%</span>
               </div>
