@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./archforge_logo.svg" alt="ArchForge Logo" width="160" height="160" />
+  <img src="public/archforge_logo.svg" alt="ArchForge Logo" width="160" height="160" />
   <h1>ArchForge</h1>
   <p><strong>Your One-Stop Shop for AUR and Arch Linux Package Management</strong></p>
 </div>
