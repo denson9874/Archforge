@@ -819,6 +819,136 @@ class StandaloneRouter(BaseHTTPRequestHandler):
                 pass
             self.send_json({"preferDark": prefer_dark, "theme": "dark" if prefer_dark else "light"})
 
+        elif path == "/api/system/cleanup/scan":
+            orphans = []
+            orphans_size = "0 B"
+            system_cache_size = "0 B"
+            aur_cache_size = "0 B"
+            aur_cache_files = []
+
+            if IS_REAL_ARCH:
+                try:
+                    orphan_proc = subprocess.run(["pacman", "-Qdtq"], stdout=subprocess.PIPE, text=True, timeout=5)
+                    if orphan_proc.stdout.strip():
+                        orphans = [pkg for pkg in orphan_proc.stdout.strip().split("\n") if pkg]
+                        orphans_size = f"{len(orphans) * 45} MB"
+                except Exception:
+                    pass
+                
+                try:
+                    pkg_cache_proc = subprocess.run("du -sh /var/cache/pacman/pkg | cut -f1", shell=True, stdout=subprocess.PIPE, text=True, timeout=5)
+                    system_cache_size = pkg_cache_proc.stdout.strip()
+                except Exception:
+                    pass
+
+                try:
+                    aur_cache_proc = subprocess.run('du -sh ~/.cache/yay | cut -f1', shell=True, stdout=subprocess.PIPE, text=True, timeout=5)
+                    aur_cache_size = aur_cache_proc.stdout.strip()
+                except Exception:
+                    pass
+                
+                try:
+                    aur_files_proc = subprocess.run('ls -1 ~/.cache/yay 2>/dev/null || true', shell=True, stdout=subprocess.PIPE, text=True, timeout=5)
+                    aur_cache_files = [f for f in aur_files_proc.stdout.strip().split("\n") if f]
+                except Exception:
+                    pass
+            else:
+                orphans = ["lib32-gcc-libs", "python-setuptools", "rust-musl"]
+                orphans_size = "145 MB"
+                system_cache_size = "2.4 GB"
+                aur_cache_size = "840 MB"
+                aur_cache_files = ["spotify", "yay-git", "visual-studio-code-bin", "system-upgrade", "google-chrome", ".lock"]
+
+            self.send_json({
+                "orphans": orphans,
+                "orphansSize": orphans_size,
+                "systemCacheSize": system_cache_size,
+                "aurCacheSize": aur_cache_size,
+                "aurCacheFiles": aur_cache_files
+            })
+
+        elif path == "/api/system/cleanup/execute" and self.command == "POST":
+            content_len = int(self.headers.get('Content-Length', 0))
+            post_body = self.rfile.read(content_len) if content_len > 0 else b'{}'
+            try:
+                body = json.loads(post_body)
+            except Exception:
+                body = {}
+                
+            remove_orphans = body.get("removeOrphans", False)
+            clear_system_cache = body.get("clearSystemCache", False)
+            clear_aur_cache = body.get("clearAurCache", False)
+            selected_orphans = body.get("selectedOrphans", None)
+            selected_aur_caches = body.get("selectedAurCaches", None)
+            
+            logs = []
+            
+            if IS_REAL_ARCH:
+                if remove_orphans:
+                    try:
+                        orphan_proc = subprocess.run(["pacman", "-Qdtq"], stdout=subprocess.PIPE, text=True)
+                        all_orphans = [pkg for pkg in orphan_proc.stdout.strip().split("\n") if pkg]
+                        orphans_to_remove = all_orphans
+                        if selected_orphans is not None:
+                            orphans_to_remove = [p for p in all_orphans if p in selected_orphans]
+
+                        orphans_list = " ".join(orphans_to_remove)
+                        if orphans_list:
+                            logs.append(f"==> Removing orphans: {orphans_list}")
+                            try:
+                                subprocess.run(f"sudo pacman -Rns --noconfirm {orphans_list}", shell=True, check=True)
+                                logs.append("Orphans removed successfully.")
+                            except Exception:
+                                logs.append("Failed to remove orphans (permission denied or error).")
+                    except Exception:
+                        logs.append("Failed to query orphans.")
+                if clear_system_cache:
+                    try:
+                        logs.append("==> Clearing system pacman cache...")
+                        subprocess.run("sudo pacman -Scc --noconfirm", shell=True, check=True)
+                        logs.append("System cache cleared.")
+                    except Exception:
+                        logs.append("Failed to clear system cache.")
+                if clear_aur_cache:
+                    try:
+                        if selected_aur_caches is not None:
+                            for cache_name in selected_aur_caches:
+                                sanitized_name = "".join([c for c in cache_name if c.isalnum() or c in "-_."])
+                                if sanitized_name:
+                                    logs.append(f"==> Clearing AUR cache for {sanitized_name}...")
+                                    subprocess.run(f"rm -rf ~/.cache/yay/{sanitized_name}", shell=True, check=True)
+                        else:
+                            logs.append("==> Clearing all AUR build caches...")
+                            subprocess.run("rm -rf ~/.cache/yay/*", shell=True, check=True)
+                        logs.append("AUR cache cleared successfully.")
+                    except Exception:
+                        logs.append("Failed to clear AUR cache.")
+            else:
+                if remove_orphans:
+                    o_list = " ".join(selected_orphans) if selected_orphans is not None else "lib32-gcc-libs python-setuptools rust-musl"
+                    if not o_list.strip():
+                        logs.append("==> Removing orphans: none selected")
+                    else:
+                        logs.append(f"==> Removing orphans: {o_list}")
+                        time.sleep(1)
+                        logs.append("Orphans removed successfully.")
+                if clear_system_cache:
+                    logs.append("==> Clearing system pacman cache...")
+                    time.sleep(1)
+                    logs.append("System cache cleared.")
+                if clear_aur_cache:
+                    if selected_aur_caches is not None:
+                        logs.append(f"==> Clearing AUR caches: {', '.join(selected_aur_caches)}")
+                    else:
+                        logs.append("==> Clearing all AUR build caches...")
+                    time.sleep(1)
+                    logs.append("AUR cache cleared successfully.")
+            
+            self.send_json({
+                "success": True,
+                "logs": logs
+            })
+
         elif path == "/api/system/stats":
             total_inst = len(query_real_installed_packages())
             items = cached_packages if IS_REAL_ARCH else installed_packages

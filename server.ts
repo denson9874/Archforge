@@ -1161,14 +1161,19 @@ StartupWMClass=ArchForge
   });
 
   app.post("/api/system/cleanup/execute", express.json(), async (req, res) => {
-    const { removeOrphans, clearSystemCache, clearAurCache } = req.body;
+    const { removeOrphans, clearSystemCache, clearAurCache, selectedOrphans, selectedAurCaches } = req.body;
     let logs: string[] = [];
     
     if (isRealArch) {
       if (removeOrphans) {
         try {
           const { stdout: orphanOut } = await execAsync("pacman -Qdtq");
-          const orphansList = orphanOut.trim().split("\n").filter(Boolean).join(" ");
+          const allOrphans = orphanOut.trim().split("\n").filter(Boolean);
+          let orphansToRemove = allOrphans;
+          if (Array.isArray(selectedOrphans)) {
+            orphansToRemove = allOrphans.filter(p => selectedOrphans.includes(p));
+          }
+          const orphansList = orphansToRemove.join(" ");
           if (orphansList) {
             logs.push(`==> Removing orphans: ${orphansList}`);
             // Note: In real life this would need sudo/CLI. We'll simulate passing it since it's an API demo or execute it if permissions allow.
@@ -1191,9 +1196,20 @@ StartupWMClass=ArchForge
       }
       if (clearAurCache) {
         try {
-          logs.push("==> Clearing AUR build caches...");
-          await execAsync("rm -rf ~/.cache/yay/*");
-          logs.push("AUR cache cleared.");
+          if (Array.isArray(selectedAurCaches)) {
+            for (const cacheName of selectedAurCaches) {
+              const sanitizedName = cacheName.replace(/[^a-zA-Z0-9.\-_]/g, "");
+              if (sanitizedName) {
+                logs.push(`==> Clearing AUR cache for ${sanitizedName}...`);
+                await execAsync(`rm -rf ~/.cache/yay/${sanitizedName}`);
+              }
+            }
+            logs.push("AUR cache cleared successfully.");
+          } else {
+            logs.push("==> Clearing AUR build caches...");
+            await execAsync("rm -rf ~/.cache/yay/*");
+            logs.push("AUR cache cleared.");
+          }
         } catch(e: any) {
           logs.push("Failed to clear AUR cache.");
         }
@@ -1201,9 +1217,14 @@ StartupWMClass=ArchForge
     } else {
       // Mock execution delays
       if (removeOrphans) {
-        logs.push("==> Removing orphaned dependencies: lib32-gcc-libs, python-setuptools...");
-        await new Promise(r => setTimeout(r, 1200));
-        logs.push("Successfully removed 3 orphaned packages (145 MB freed).");
+        const oList = Array.isArray(selectedOrphans) ? selectedOrphans.join(", ") : "lib32-gcc-libs, python-setuptools...";
+        if (oList) {
+          logs.push(`==> Removing orphaned dependencies: ${oList}`);
+          await new Promise(r => setTimeout(r, 1200));
+          logs.push(`Successfully removed ${Array.isArray(selectedOrphans) ? selectedOrphans.length : 3} orphaned packages (145 MB freed).`);
+        } else {
+          logs.push("==> Removing orphans: none selected.");
+        }
       }
       if (clearSystemCache) {
         logs.push("==> Clearing /var/cache/pacman/pkg...");
@@ -1211,7 +1232,11 @@ StartupWMClass=ArchForge
         logs.push("Successfully cleared pacman internal cache (2.4 GB freed).");
       }
       if (clearAurCache) {
-        logs.push("==> Removing unused build directories (~/.cache/yay)...");
+        if (Array.isArray(selectedAurCaches)) {
+          logs.push(`==> Removing selected build directories: ${selectedAurCaches.join(", ")}`);
+        } else {
+          logs.push("==> Removing unused build directories (~/.cache/yay)...");
+        }
         await new Promise(r => setTimeout(r, 800));
         logs.push("Successfully cleared AUR build traces (840 MB freed).");
       }

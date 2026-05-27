@@ -27,6 +27,8 @@ export default function BuildProgressModal({
   const [rememberPw, setRememberPw] = useState(true);
   const [authSubmitted, setAuthSubmitted] = useState(false);
 
+  const [systemStats, setSystemStats] = useState<any>(null);
+
   // Initialize and load systemRealArch to check fallback dynamically
   const [systemRealArch, setSystemRealArch] = useState<boolean | null>(() => {
     if (isRealArch !== undefined && isRealArch !== null) {
@@ -36,26 +38,32 @@ export default function BuildProgressModal({
   });
 
   useEffect(() => {
-    if (isRealArch !== undefined && isRealArch !== null) {
-      setSystemRealArch(isRealArch);
-    } else {
-      let active = true;
-      fetch("/api/system/stats")
-        .then((res) => res.json())
-        .then((data) => {
-          if (active) {
+    let active = true;
+
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("/api/system/stats");
+        const data = await res.json();
+        if (active) {
+          setSystemStats(data);
+          if (isRealArch === undefined || isRealArch === null) {
             setSystemRealArch(!!data.isRealArch);
           }
-        })
-        .catch(() => {
-          if (active) {
-            setSystemRealArch(false);
-          }
-        });
-      return () => {
-        active = false;
-      };
-    }
+        }
+      } catch (err) {
+        if (active && (isRealArch === undefined || isRealArch === null)) {
+          setSystemRealArch(false);
+        }
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [isRealArch]);
 
   // Determine if we need to show the Auth Panel before starting the build
@@ -304,8 +312,19 @@ export default function BuildProgressModal({
     }
   }, [logs]);
 
-  // Analyze package size and dependency count to estimate build time
-  const estSeconds = estimateBuildTimeSeconds(pkgName, pkgSize, depends.length);
+  // Analyze package size and dependency count to est build time
+  let estSeconds = estimateBuildTimeSeconds(pkgName, pkgSize, depends.length);
+
+  // Dynamically adjust based on system stats (CPU load)
+  if (systemStats?.cpuUsage) {
+    const cpuVal = parseFloat(systemStats.cpuUsage);
+    if (!isNaN(cpuVal) && cpuVal > 20) {
+      // Scale build time up if CPU is heavily utilized (e.g. 100% adds 80% more to estimation)
+      const factor = 1 + ((cpuVal - 20) / 80) * 0.8;
+      estSeconds = Math.round(estSeconds * factor);
+    }
+  }
+
   const estTimeStr = formatEstimatedTime(estSeconds);
   const remainingSeconds = Math.max(0, estSeconds - elapsedSeconds);
   const remainingTimeStr = formatEstimatedTime(remainingSeconds);

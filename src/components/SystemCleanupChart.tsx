@@ -100,8 +100,10 @@ export default function SystemCleanupChart({ orphansSize, systemCacheSize, aurCa
          d3.select(this).transition().duration(300).ease(d3.easeCubicOut).attr("d", hoverArc as any); 
          if (d.data.label !== "Empty") {
            tooltip.transition().duration(200).style("opacity", 1);
+           const totalSize = data.reduce((sum, item) => sum + item.value, 0);
+           const percentage = totalSize > 0 ? ((d.data.value / totalSize) * 100).toFixed(1) : "0";
            tooltip
-             .html(`<strong>${d.data.label}</strong><br/>${Math.round(d.data.value)} MB`)
+             .html(`<strong>${d.data.label}</strong><br/>${Math.round(d.data.value)} MB <span style="opacity:0.8; font-size:0.9em; margin-left:4px;">(${percentage}%)</span>`)
              .style("left", (event.pageX) + "px")
              .style("top", (event.pageY) + "px");
          }

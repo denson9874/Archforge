@@ -13,6 +13,10 @@ export default function AutoCleanupDaemon() {
 
       try {
         const scanRes = await fetch("/api/system/cleanup/scan");
+        if (!scanRes.ok) {
+          console.warn(`[AutoCleanup] Backend unavailable (${scanRes.status}), skipping cycle.`);
+          return;
+        }
         const data = await scanRes.json();
         const aurSizeRaw = data.aurCacheSize || "0 B"; // "840 MB" or "2.4 GB"
         const currentMB = parseSizeToMB(aurSizeRaw);

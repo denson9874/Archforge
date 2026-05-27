@@ -21,9 +21,15 @@ export default function SystemCleanupTab() {
     clearAurCache: true
   });
 
+  const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
+  const [selectedAurCaches, setSelectedAurCaches] = useState<string[]>([]);
+
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLogs, setCleanLogs] = useState<string[]>([]);
   const [cleanComplete, setCleanComplete] = useState(false);
+  
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [totalSpaceToFree, setTotalSpaceToFree] = useState("0 B");
 
   // Auto-Cleanup Schedule states
   const [autoCleanEnabled, setAutoCleanEnabled] = useState(() => localStorage.getItem("archforge_autoclean") === "true");
@@ -48,13 +54,48 @@ export default function SystemCleanupTab() {
     setCleanLogs([]);
     try {
       const res = await fetch("/api/system/cleanup/scan");
+      if (!res.ok) {
+        throw new Error(`Failed to load: ${res.statusText}`);
+      }
       const data = await res.json();
       setResults(data);
+      setSelectedOrphans(data.orphans || []);
+      setSelectedAurCaches(data.aurCacheFiles || []);
     } catch (e) {
       console.error(e);
     } finally {
       setIsScanning(false);
     }
+  };
+
+  const parseSizeToMB = (sizeStr: string): number => {
+    if (!sizeStr) return 0;
+    const match = sizeStr.match(/([\d.]+)\s*([A-Za-z]+)/);
+    if (!match) return 0;
+    const val = parseFloat(match[1]);
+    const unit = match[2].toUpperCase();
+    if (unit === 'B') return val / (1024 * 1024);
+    if (unit === 'KB' || unit === 'K') return val / 1024;
+    if (unit === 'MB' || unit === 'M') return val;
+    if (unit === 'GB' || unit === 'G') return val * 1024;
+    if (unit === 'TB' || unit === 'T') return val * 1024 * 1024;
+    return val;
+  };
+
+  const formatMB = (mb: number): string => {
+    if (mb < 1) return (mb * 1024).toFixed(1) + " KB";
+    if (mb < 1024) return mb.toFixed(1) + " MB";
+    return (mb / 1024).toFixed(2) + " GB";
+  };
+
+  const handleCleanupClick = () => {
+    let totalMB = 0;
+    if (options.removeOrphans && results?.orphansSize) totalMB += parseSizeToMB(results.orphansSize);
+    if (options.clearSystemCache && results?.systemCacheSize) totalMB += parseSizeToMB(results.systemCacheSize);
+    if (options.clearAurCache && results?.aurCacheSize) totalMB += parseSizeToMB(results.aurCacheSize);
+    
+    setTotalSpaceToFree(formatMB(totalMB));
+    setShowConfirmModal(true);
   };
 
   const handleCleanup = async () => {
@@ -66,8 +107,11 @@ export default function SystemCleanupTab() {
       const res = await fetch("/api/system/cleanup/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(options)
+        body: JSON.stringify({ ...options, selectedOrphans, selectedAurCaches })
       });
+      if (!res.ok) {
+        throw new Error(`Execution failed: ${res.statusText}`);
+      }
       const data = await res.json();
       if (data.success) {
         setCleanLogs(data.logs || []);
@@ -131,9 +175,32 @@ export default function SystemCleanupTab() {
                   </div>
                 )}
               </div>
+
+              {results?.orphans && results.orphans.length > 0 && !isScanning && (
+                <div className="mt-4 text-xs font-mono">
+                  <p className="text-slate-500 mb-1.5 font-medium">Orphan packages:</p>
+                  <ul className="space-y-1 max-h-24 overflow-y-auto bg-black/40 scrollbar-thin rounded-lg p-2.5 border border-white/5">
+                    {results.orphans.map((pkg, i) => (
+                      <li key={i} className="truncate flex items-center gap-2 text-slate-400">
+                        <input
+                          type="checkbox"
+                          checked={selectedOrphans.includes(pkg)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedOrphans([...selectedOrphans, pkg]);
+                            else setSelectedOrphans(selectedOrphans.filter(p => p !== pkg));
+                          }}
+                          disabled={!options.removeOrphans || isCleaning}
+                          className="rounded border-slate-600 bg-transparent text-rose-500 cursor-pointer h-3 w-3"
+                        />
+                        <span className={!selectedOrphans.includes(pkg) ? "opacity-50 line-through" : ""}>{pkg}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
             
-            <label className="mt-6 flex items-center gap-2 cursor-pointer group/toggle relative z-10">
+            <label className="mt-6 flex items-center gap-2 cursor-pointer group/toggle relative z-10 w-fit">
               <div className={`w-4 h-4 rounded border flex items-center justify-center transition ${options.removeOrphans ? 'bg-rose-500 border-rose-500' : 'border-slate-600 group-hover/toggle:border-slate-400'}`}>
                 {options.removeOrphans && <CheckCircle2 className="h-3 w-3 text-white" />}
               </div>
@@ -212,11 +279,24 @@ export default function SystemCleanupTab() {
 
               {results?.aurCacheFiles && results.aurCacheFiles.length > 0 && !isScanning && (
                 <div className="mt-4 text-xs">
-                  <p className="text-slate-500 mb-1.5 font-medium">Cached package directories:</p>
+                  <p className="text-slate-500 mb-1.5 font-medium flex justify-between items-center">
+                    <span>Cached package directories:</span>
+                  </p>
                   <ul className="text-slate-400 font-mono space-y-1 max-h-24 overflow-y-auto bg-black/40 scrollbar-thin rounded-lg p-2.5 border border-white/5">
                     {results.aurCacheFiles.map((file, i) => (
                       <li key={i} className="truncate flex items-center gap-2">
-                        <span className="text-cyan-500/50">/</span> {file}
+                        <input
+                          type="checkbox"
+                          checked={selectedAurCaches.includes(file)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedAurCaches([...selectedAurCaches, file]);
+                            else setSelectedAurCaches(selectedAurCaches.filter(f => f !== file));
+                          }}
+                          disabled={!options.clearAurCache || isCleaning}
+                          className="rounded border-slate-600 bg-transparent text-cyan-500 cursor-pointer h-3 w-3"
+                        />
+                        <span className="text-cyan-500/50">/</span> 
+                        <span className={!selectedAurCaches.includes(file) ? "opacity-50 line-through" : ""}>{file}</span>
                       </li>
                     ))}
                   </ul>
@@ -224,7 +304,7 @@ export default function SystemCleanupTab() {
               )}
             </div>
             
-            <label className="mt-6 flex items-center gap-2 cursor-pointer group/toggle relative z-10">
+            <label className="mt-6 flex items-center gap-2 cursor-pointer group/toggle relative z-10 w-fit">
                <div className={`w-4 h-4 rounded border flex items-center justify-center transition ${options.clearAurCache ? 'bg-cyan-500 border-cyan-500' : 'border-slate-600 group-hover/toggle:border-slate-400'}`}>
                 {options.clearAurCache && <CheckCircle2 className="h-3 w-3 text-black" />}
               </div>
@@ -316,7 +396,7 @@ export default function SystemCleanupTab() {
         </div>
         <button
           className="flex-shrink-0 bg-red-500 hover:bg-red-400 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-lg shadow-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
-          onClick={handleCleanup}
+          onClick={handleCleanupClick}
           disabled={!results || isScanning || isCleaning || (!options.removeOrphans && !options.clearAurCache && !options.clearSystemCache)}
         >
           {isCleaning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -353,6 +433,73 @@ export default function SystemCleanupTab() {
                )}
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowConfirmModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-[#0b0e14] border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-6 glass-panel"
+            >
+              <div className="flex items-center gap-3 text-amber-400 mb-4">
+                <AlertTriangle className="h-6 w-6" />
+                <h3 className="text-xl font-bold text-white">Confirm Cleanup</h3>
+              </div>
+              <p className="text-sm text-slate-300 mb-4">
+                You are about to execute a system cleanup. This operation will free up approximately <strong className="text-white">{totalSpaceToFree}</strong> of disk space.
+              </p>
+              <div className="space-y-2 mb-6">
+                {options.removeOrphans && (
+                  <div className="flex justify-between text-xs p-2 bg-white/5 rounded-lg border border-white/5">
+                    <span className="text-slate-400">Remove Orphans</span>
+                    <span className="text-rose-400 font-mono">{results?.orphansSize || "0 B"}</span>
+                  </div>
+                )}
+                {options.clearSystemCache && (
+                  <div className="flex justify-between text-xs p-2 bg-white/5 rounded-lg border border-white/5">
+                    <span className="text-slate-400">Clear Pacman Cache</span>
+                    <span className="text-indigo-400 font-mono">{results?.systemCacheSize || "0 B"}</span>
+                  </div>
+                )}
+                {options.clearAurCache && (
+                  <div className="flex justify-between text-xs p-2 bg-white/5 rounded-lg border border-white/5">
+                    <span className="text-slate-400">Clear AUR Cache</span>
+                    <span className="text-cyan-400 font-mono">{results?.aurCacheSize || "0 B"}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 bg-white/5 hover:bg-white/10 transition"
+                  onClick={() => setShowConfirmModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/20 transition flex items-center gap-2"
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    handleCleanup();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Confirm Execute
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
