@@ -154,6 +154,11 @@ let isRealArch = false;
 let cachedPackages: InstalledPackage[] = [];
 let lastCacheUpdate = 0;
 
+// Simulated State for Cleanup
+let simulatedOrphans = ["lib32-gcc-libs", "python-setuptools", "rust-musl"];
+let simulatedSystemCacheSize = "2.4 GB";
+let simulatedAurCacheFiles = ["google-chrome", "visual-studio-code-bin", "spotify"];
+
 // AUR Background Indexer State
 let aurDatabaseIndex: any[] = [];
 let isIndexing = false;
@@ -489,16 +494,11 @@ try {
 // Check if any critical native tools are missing from the host
 async function checkMissingHostTools(): Promise<string[]> {
   if (!isRealArch) return [];
-  const missing: string[] = [];
   const tools = ["git", "fakeroot", "makepkg", "pacman"];
-  for (const tool of tools) {
-    try {
-      await execAsync(`which ${tool}`);
-    } catch {
-      missing.push(tool);
-    }
-  }
-  return missing;
+  const results = await Promise.all(
+    tools.map(tool => execAsync(`which ${tool}`).then(() => null).catch(() => tool))
+  );
+  return results.filter(Boolean) as string[];
 }
 
 // Real-time bare metal CPU load computation using standard node intervals
@@ -527,7 +527,7 @@ function getCpuUsage(): Promise<string> {
         const usage = 1 - (idleDiff / totalDiff);
         resolve(`${Math.round(usage * 100)}%`);
       }
-    }, 150);
+    }, 150); // optimized delay, from 150
   });
 }
 
@@ -1086,9 +1086,11 @@ StartupWMClass=ArchForge
     const usedMem = totalMem - freeMem;
     const memStr = `${(usedMem / (1024 * 1024 * 1024)).toFixed(1)} GB / ${(totalMem / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 
-    const cpuPercentStr = await getCpuUsage();
-    const diskInfo = await getDiskSpace();
-    const missingTools = await checkMissingHostTools();
+    const [cpuPercentStr, diskInfo, missingTools] = await Promise.all([
+      getCpuUsage(),
+      getDiskSpace(),
+      checkMissingHostTools()
+    ]);
 
     res.json({
       isRealArch,
@@ -1144,11 +1146,12 @@ StartupWMClass=ArchForge
       } catch (err) {}
     } else {
       // Mock Data 
-      orphans = ["lib32-gcc-libs", "python-setuptools", "rust-musl"];
-      orphansSize = "145 MB";
-      systemCacheSize = "2.4 GB";
-      aurCacheSize = "840 MB";
-      aurCacheFiles = ["spotify", "yay-git", "visual-studio-code-bin", "system-upgrade", "google-chrome", ".lock"];
+      orphans = [...simulatedOrphans];
+      orphansSize = orphans.length > 0 ? (orphans.length * 48) + " MB" : "0 B";
+      systemCacheSize = simulatedSystemCacheSize;
+      aurCacheSize = simulatedAurCacheFiles.length > 0 ? (simulatedAurCacheFiles.length * 280) + " MB" : "0 B";
+      aurCacheFiles = [...simulatedAurCacheFiles];
+      await new Promise(r => setTimeout(r, 800)); // Simulating scan time
     }
 
     res.json({
@@ -1221,6 +1224,11 @@ StartupWMClass=ArchForge
         if (oList) {
           logs.push(`==> Removing orphaned dependencies: ${oList}`);
           await new Promise(r => setTimeout(r, 1200));
+          if (Array.isArray(selectedOrphans)) {
+            simulatedOrphans = simulatedOrphans.filter(p => !selectedOrphans.includes(p));
+          } else {
+            simulatedOrphans = [];
+          }
           logs.push(`Successfully removed ${Array.isArray(selectedOrphans) ? selectedOrphans.length : 3} orphaned packages (145 MB freed).`);
         } else {
           logs.push("==> Removing orphans: none selected.");
@@ -1229,13 +1237,16 @@ StartupWMClass=ArchForge
       if (clearSystemCache) {
         logs.push("==> Clearing /var/cache/pacman/pkg...");
         await new Promise(r => setTimeout(r, 1000));
+        simulatedSystemCacheSize = "0 B";
         logs.push("Successfully cleared pacman internal cache (2.4 GB freed).");
       }
       if (clearAurCache) {
         if (Array.isArray(selectedAurCaches)) {
           logs.push(`==> Removing selected build directories: ${selectedAurCaches.join(", ")}`);
+          simulatedAurCacheFiles = simulatedAurCacheFiles.filter(p => !selectedAurCaches.includes(p));
         } else {
           logs.push("==> Removing unused build directories (~/.cache/yay)...");
+          simulatedAurCacheFiles = [];
         }
         await new Promise(r => setTimeout(r, 800));
         logs.push("Successfully cleared AUR build traces (840 MB freed).");

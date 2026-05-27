@@ -47,11 +47,13 @@ export default function SystemCleanupTab() {
     fetchScan();
   }, []);
 
-  const fetchScan = async () => {
+  const fetchScan = async (background = false) => {
     setIsScanning(true);
-    setResults(null);
-    setCleanComplete(false);
-    setCleanLogs([]);
+    if (!background) {
+      setResults(null);
+      setCleanComplete(false);
+      setCleanLogs([]);
+    }
     try {
       const res = await fetch("/api/system/cleanup/scan");
       if (!res.ok) {
@@ -117,7 +119,7 @@ export default function SystemCleanupTab() {
         setCleanLogs(data.logs || []);
         setCleanComplete(true);
         // Rescan after a short delay
-        setTimeout(() => fetchScan(), 3000);
+        setTimeout(() => fetchScan(true), 3000);
       }
     } catch (e) {
       console.error(e);
@@ -134,7 +136,7 @@ export default function SystemCleanupTab() {
           System Cleanup
         </h2>
         <button
-          onClick={fetchScan}
+          onClick={() => fetchScan(false)}
           disabled={isScanning || isCleaning}
           className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition outline-none disabled:opacity-50"
         >

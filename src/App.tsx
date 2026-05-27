@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Package,
@@ -476,19 +476,24 @@ export default function App() {
   };
 
   // Filter local packages for the list on grid dashboard
-  const filteredInstalledPackages = installedPackages.filter(pkg => {
-    if (instFilter === "aur") return pkg.repo === "aur";
-    if (instFilter === "official") return pkg.repo !== "aur";
-    if (instFilter === "unstable") return pkg.health === "warning" || pkg.health === "error";
-    return true;
-  });
+  const filteredInstalledPackages = useMemo(() => {
+    return installedPackages.filter(pkg => {
+      if (instFilter === "aur") return pkg.repo === "aur";
+      if (instFilter === "official") return pkg.repo !== "aur";
+      if (instFilter === "unstable") return pkg.health === "warning" || pkg.health === "error";
+      return true;
+    });
+  }, [installedPackages, instFilter]);
 
   // Paginate local packages
-  const totalLocalPages = Math.ceil(filteredInstalledPackages.length / localItemsPerPage);
-  const paginatedInstalledPackages = filteredInstalledPackages.slice(
-    (localPage - 1) * localItemsPerPage,
-    localPage * localItemsPerPage
-  );
+  const totalLocalPages = useMemo(() => Math.ceil(filteredInstalledPackages.length / localItemsPerPage), [filteredInstalledPackages.length, localItemsPerPage]);
+  
+  const paginatedInstalledPackages = useMemo(() => {
+    return filteredInstalledPackages.slice(
+      (localPage - 1) * localItemsPerPage,
+      localPage * localItemsPerPage
+    );
+  }, [filteredInstalledPackages, localPage, localItemsPerPage]);
 
   const activePreset = THEME_PRESETS.find(p => p.id === themeOption) || THEME_PRESETS[0];
   const orbs = activePreset.orbs;
@@ -530,14 +535,23 @@ export default function App() {
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition capitalize cursor-pointer ${
+                  className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition capitalize cursor-pointer ${
                     activeTab === tab
-                      ? "bg-white/10 text-cyan-400 font-extrabold border border-white/10 shadow-lg"
-                      : "text-slate-400 hover:text-white"
+                      ? "text-cyan-400 font-extrabold"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
-                  {icons[tab]}
-                  {tab}
+                  {activeTab === tab && (
+                    <motion.div
+                      layoutId="navTabIndicator"
+                      className="absolute bottom-0 left-3 right-3 h-[3px] bg-cyan-400 rounded-t-md"
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-2">
+                    {icons[tab]}
+                    {tab}
+                  </span>
                 </button>
               );
             })}
