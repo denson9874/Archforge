@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Loader2, Sparkles, SlidersHorizontal, Vote, ArrowRight, CheckCircle2, AlertTriangle, Calendar, Clock, ChevronLeft, ChevronRight, CheckSquare, Check, Layers, Play, Undo2 } from "lucide-react";
 import { AurSearchResult, InstalledPackage } from "../types";
 import { playIndexerCompleteSound } from "../utils/audioHelper";
+import AurWorker from "../workers/aurIndexer.worker?worker";
 
 import SearchGroundingResult from "./SearchGroundingResult";
 
@@ -15,6 +16,11 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processedResults, setProcessedResults] = useState<any[]>([]);
+  const [elapsedProcTime, setElapsedProcTime] = useState(0);
+  const [estimatedTotalTime, setEstimatedTotalTime] = useState(0);
+  const workerRef = useRef<Worker | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "aur" | "official" | "upgrades">("all");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   
@@ -194,62 +200,69 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
   };
 
   useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isProcessing) {
+      const startTime = Date.now();
+      setElapsedProcTime(0);
+      interval = setInterval(() => {
+        setElapsedProcTime(Date.now() - startTime);
+      }, 50); // Fast enough to look smooth
+    } else {
+      setElapsedProcTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isProcessing]);
+
+  useEffect(() => {
     fetchResults();
   }, [debouncedQuery, indexStatus.indexedCount]);
 
-  // Filters results locally according to active tabs
-  const filteredResults = useMemo(() => results.filter(pkg => {
-    const isLocal = installedPackages.some(ip => ip.name.toLowerCase() === pkg.Name?.toLowerCase() || ip.name.toLowerCase() === pkg.name?.toLowerCase());
-    const localPkg = installedPackages.find(ip => ip.name.toLowerCase() === pkg.Name?.toLowerCase() || ip.name.toLowerCase() === pkg.name?.toLowerCase());
+  const workerEtaTimerRef = useRef<{start: number, eta: number}>({start: 0, eta: 0});
 
-    const isInstalledAur = localPkg?.repo === "aur";
-    const isAurPkg = pkg.isAur || isInstalledAur || !pkg.Repo;
+  useEffect(() => {
+    // Initialize worker if not already initialized
+    if (!workerRef.current) {
+      workerRef.current = new AurWorker();
+      workerRef.current.onmessage = (e) => {
+        const timeElapsed = Date.now() - workerEtaTimerRef.current.start;
+        const timeRemaining = Math.max(0, workerEtaTimerRef.current.eta - timeElapsed);
 
-    if (activeTab === "aur") {
-      return isAurPkg;
+        if (timeRemaining > 0) {
+          setTimeout(() => {
+            setProcessedResults(e.data);
+            setIsProcessing(false);
+          }, timeRemaining);
+        } else {
+          setProcessedResults(e.data);
+          setIsProcessing(false);
+        }
+      };
     }
-    if (activeTab === "official") {
-      return !isAurPkg;
-    }
-    if (activeTab === "upgrades") {
-      return isLocal && localPkg?.hasUpdate;
-    }
-    return true;
-  }), [results, installedPackages, activeTab]);
+    
+    // Send data to worker when dependencies change
+    setIsProcessing(true);
+    const calculatedEta = Math.max(500, results.length * 0.008);
+    setEstimatedTotalTime(calculatedEta);
+    workerEtaTimerRef.current = { start: Date.now(), eta: calculatedEta };
 
-  // Sort matched rows and filter by Abandoned state
-  const processedResults = useMemo(() => filteredResults
-    .filter(pkg => {
-      const lastMod = pkg.LastModified || pkg.lastModified;
-      const isAbandoned = lastMod ? (Date.now() / 1000 - lastMod) > 180 * 24 * 3600 : false;
-      
-      if (filterAbandoned === "active") {
-        return !isAbandoned;
+    workerRef.current.postMessage({
+      results,
+      installedPackages,
+      activeTab,
+      filterAbandoned,
+      sortKey
+    });
+
+  }, [results, installedPackages, activeTab, filterAbandoned, sortKey]);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup worker on unmount
+      if (workerRef.current) {
+        workerRef.current.terminate();
       }
-      if (filterAbandoned === "abandoned") {
-        return isAbandoned;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortKey === "popularity") {
-        return (b.Popularity || 0) - (a.Popularity || 0);
-      }
-      if (sortKey === "votes") {
-        return (b.NumVotes || 0) - (a.NumVotes || 0);
-      }
-      if (sortKey === "latest_update") {
-        const timeA = a.LastModified || a.lastModified || 0;
-        const timeB = b.LastModified || b.lastModified || 0;
-        return timeB - timeA;
-      }
-      if (sortKey === "name") {
-        const nameA = (a.Name || a.name || "").toLowerCase();
-        const nameB = (b.Name || b.name || "").toLowerCase();
-        return nameA.localeCompare(nameB);
-      }
-      return 0;
-    }), [filteredResults, filterAbandoned, sortKey]);
+    };
+  }, []);
 
   return (
     <div className="flex h-full flex-col rounded-xl p-5 glass-panel">
@@ -491,7 +504,31 @@ export default function PackageExplorer({ onSelectPackage, installedPackages, on
         return (
           <>
             <div className="mt-4 flex-1 overflow-y-auto min-h-[500px] max-h-[850px] pr-1 space-y-3 glass-scrollbar">
-              {paginatedResults.length > 0 ? (
+              {loading || isProcessing ? (
+                <div className="flex h-64 flex-col items-center justify-center space-y-6">
+                  <div className="relative flex items-center justify-center">
+                    <div className="absolute h-16 w-16 animate-ping rounded-full bg-cyan-500/10" />
+                    <div className="absolute h-24 w-24 rounded-full border border-dashed border-cyan-500/30 animate-[spin_10s_linear_infinite]" />
+                    <div className="absolute h-32 w-32 rounded-full border border-cyan-500/10 animate-[spin_15s_linear_infinite_reverse]" />
+                    <Layers className="relative h-8 w-8 animate-bounce text-cyan-400" />
+                  </div>
+                  <div className="flex flex-col items-center w-64 mt-4">
+                    <div className="flex justify-between items-center w-full mb-3">
+                      <p className="animate-pulse text-xs font-semibold text-cyan-400/80 uppercase font-mono tracking-widest">
+                        {isProcessing ? "Processing Data" : "Querying DB"}
+                      </p>
+                      {isProcessing && (
+                        <p className="text-[10px] font-mono text-cyan-500/60 tabular-nums">
+                          ETA {Math.max(0.01, (estimatedTotalTime - elapsedProcTime) / 1000).toFixed(2)}s
+                        </p>
+                      )}
+                    </div>
+                    <div className="h-1 w-full bg-zinc-800/80 rounded-full overflow-hidden relative">
+                      <div className="absolute inset-y-0 left-0 bg-cyan-500 rounded-full w-full animate-pulse shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
+                    </div>
+                  </div>
+                </div>
+              ) : paginatedResults.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 animate-fadeIn">
                   {paginatedResults.map((pkg, idx) => {
                     const name = pkg.Name || pkg.name;

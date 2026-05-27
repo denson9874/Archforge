@@ -4,38 +4,59 @@
 export function generateBuildSteps(pkgName: string, pkgVersion: string, depends: string[] = []): { phase: string; lines: string[]; duration: number }[] {
   const steps: { phase: string; lines: string[]; duration: number }[] = [];
 
+  const cacheKey = `archforge-deps-cache-${pkgName}-${pkgVersion}`;
+  const isDepsCached = depends.length > 0 && localStorage.getItem(cacheKey) === "cached";
+
   // Phase 1: Dependency Check & Sync
   if (depends.length > 0) {
-    steps.push({
-      phase: "Dependency Check",
-      duration: 1200,
-      lines: [
-        `:: Synchronizing package databases...`,
-        ` core is up to date`,
-        ` extra is up to date`,
-        ` aur is up to date`,
-        `:: Resolving dependencies...`,
-        `:: There are ${depends.length} providers for required build-time dependencies:`,
-        `   -> ${depends.map((d, i) => `${i + 1}: ${d}`).join(", ")}`,
-        `:: Installing build-time dependencies first:`,
-        ...depends.flatMap(dep => [
-          `   resolving dependencies for ${dep}...`,
-          `   looking for conflicting packages...`,
-          `   Packages (${dep}): ${dep}-${pkgVersion}-1`,
-          `   Total Installed Size:  ${(Math.random() * 10 + 2).toFixed(1)} MiB`,
-          `   :: Proceed with installation? [Y/n] y`,
-          `   (1/1) checking keys in keyring                    [######################] 100%`,
-          `   (1/1) checking package integrity                  [######################] 100%`,
-          `   (1/1) loading package files                       [######################] 100%`,
-          `   (1/1) checking for file conflicts                 [######################] 100%`,
-          `   (1/1) checking available disk space               [######################] 100%`,
-          `   :: Installing ${dep}...`,
-          `   (1/1) installing ${dep}                          [######################] 100%`,
-          `   :: Running post-transaction hooks...`,
-          `   (1/1) Arming ConditionNeedsUpdate...`
-        ])
-      ]
-    });
+    if (isDepsCached) {
+      steps.push({
+        phase: "Dependency Check (Cached)",
+        duration: 300,
+        lines: [
+          `:: Synchronizing package databases...`,
+          `:: Resolving dependencies...`,
+          `:: Loading dependency constraints from local build cache...`,
+          `   -> ${depends.map((d, i) => `${i + 1}: ${d}`).join(", ")}`,
+          `:: Build-time dependencies already satisfied by local cache.`
+        ]
+      });
+    } else {
+      steps.push({
+        phase: "Dependency Check",
+        duration: 1200,
+        lines: [
+          `:: Synchronizing package databases...`,
+          ` core is up to date`,
+          ` extra is up to date`,
+          ` aur is up to date`,
+          `:: Resolving dependencies...`,
+          `:: There are ${depends.length} providers for required build-time dependencies:`,
+          `   -> ${depends.map((d, i) => `${i + 1}: ${d}`).join(", ")}`,
+          `:: Installing build-time dependencies first:`,
+          ...depends.flatMap(dep => [
+            `   resolving dependencies for ${dep}...`,
+            `   looking for conflicting packages...`,
+            `   Packages (${dep}): ${dep}-${pkgVersion}-1`,
+            `   Total Installed Size:  ${(Math.random() * 10 + 2).toFixed(1)} MiB`,
+            `   :: Proceed with installation? [Y/n] y`,
+            `   (1/1) checking keys in keyring                    [######################] 100%`,
+            `   (1/1) checking package integrity                  [######################] 100%`,
+            `   (1/1) loading package files                       [######################] 100%`,
+            `   (1/1) checking for file conflicts                 [######################] 100%`,
+            `   (1/1) checking available disk space               [######################] 100%`,
+            `   :: Installing ${dep}...`,
+            `   (1/1) installing ${dep}                          [######################] 100%`,
+            `   :: Running post-transaction hooks...`,
+            `   (1/1) Arming ConditionNeedsUpdate...`
+          ])
+        ]
+      });
+      // Store in local cache to prevent recalculation on next simulator run
+      try {
+        localStorage.setItem(cacheKey, "cached");
+      } catch(e) {}
+    }
   }
 
   // Phase 2: Download & PKGBUILD Check

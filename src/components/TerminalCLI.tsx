@@ -101,7 +101,7 @@ export default function TerminalCLI({
               outputLines = [`error: package '${pkgName}' was not found`];
             }
           }
-        } else if (flag === "-R") {
+        } else if (flag.startsWith("-R")) {
           const pkgName = parts[2];
           if (!pkgName) {
             outputLines = ["error: no package targets specified"];
@@ -153,6 +153,27 @@ export default function TerminalCLI({
             setTimeout(() => {
               onInstallPkg(targetPkg);
             }, 600);
+          }
+        } else if (flag.startsWith("-R")) {
+          const pkgName = parts[2];
+          if (!pkgName) {
+            outputLines = ["error: no package targets specified"];
+          } else {
+            const found = installedPackages.find(p => p.name.toLowerCase() === pkgName.toLowerCase());
+            if (found) {
+              outputLines = [
+                `checking dependencies...`,
+                `Packages (1) ${found.name}-${found.version}`,
+                `Total Removed Size: ${found.size}`,
+                `:: Purging system binaries... dispatching GUI removal thread.`
+              ];
+              // Dispatch to GUI
+              setTimeout(() => {
+                onUninstallPkg(found.name);
+              }, 400);
+            } else {
+              outputLines = [`error: package '${pkgName}' was not found`];
+            }
           }
         } else if (flag === "-ss" || flag === "-Ss") {
           const searchArg = parts[2];

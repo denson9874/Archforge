@@ -568,12 +568,44 @@ async function getDiskSpace() {
 
 // Queries real system updates pending from pacman libraries
 async function getPendingUpdatesCount(): Promise<number> {
-  try {
-    const { stdout } = await execAsync("checkupdates");
-    return stdout.trim().split("\n").filter(Boolean).length;
-  } catch {
-    return 0;
+  const map = await getPendingUpdatesMap();
+  return Object.keys(map).length;
+}
+
+// Helper to get detailed pending updates map
+let cachedUpdatesMap: Record<string, string> | null = null;
+let lastUpdatesCheck = 0;
+
+async function getPendingUpdatesMap(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (cachedUpdatesMap && (now - lastUpdatesCheck < 30000)) { // 30s cache
+    return cachedUpdatesMap;
   }
+  
+  const updates: Record<string, string> = {};
+  try {
+    let checkCmd = "checkupdates";
+    try {
+      await execAsync("which yay");
+      checkCmd = "yay -Qu";
+    } catch {}
+
+    const { stdout } = await execAsync(checkCmd);
+    const lines = stdout.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      const match = line.match(/^(\S+)\s+\S+\s+->\s+(\S+)/);
+      if (match) {
+        updates[match[1]] = match[2];
+      } else {
+        const parts = line.split(" ");
+        if (parts.length > 0) updates[parts[0]] = "unknown";
+      }
+    }
+  } catch {}
+  
+  cachedUpdatesMap = updates;
+  lastUpdatesCheck = now;
+  return updates;
 }
 
 // Retrieves all installed packages on bare metal hardware cleanly
@@ -584,18 +616,21 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
   }
 
   try {
+    const [foreignSetResult, pacmanOutResult, updatesMap] = await Promise.all([
+      execAsync("LC_ALL=C pacman -Qm", { maxBuffer: 1024 * 1024 * 10 }).catch(() => ({ stdout: "" })),
+      execAsync("LC_ALL=C pacman -Qi", { maxBuffer: 1024 * 1024 * 50 }),
+      getPendingUpdatesMap()
+    ]);
+
     // Determine foreign packages (e.g. AUR wrappers or local makepkg builds)
     const foreignSet = new Set<string>();
-    try {
-      const { stdout: mOut } = await execAsync("LC_ALL=C pacman -Qm", { maxBuffer: 1024 * 1024 * 10 });
-      mOut.trim().split("\n").forEach(line => {
-        const parts = line.split(/\s+/);
-        if (parts[0]) foreignSet.add(parts[0].toLowerCase());
-      });
-    } catch {}
+    foreignSetResult.stdout.trim().split("\n").forEach((line: string) => {
+      const parts = line.split(/\s+/);
+      if (parts[0]) foreignSet.add(parts[0].toLowerCase());
+    });
 
     // Parse the entire local system database via pacman -Qi
-    const { stdout } = await execAsync("LC_ALL=C pacman -Qi", { maxBuffer: 1024 * 1024 * 50 });
+    const stdout = pacmanOutResult.stdout;
     const blocks = stdout.split(/\n(?=Name\s+:)/);
     const parsedPkgs: InstalledPackage[] = [];
 
@@ -632,6 +667,16 @@ async function queryRealInstalledPackages(): Promise<InstalledPackage[]> {
       if (pkg.name) {
         const nameLower = pkg.name.toLowerCase();
         pkg.repo = foreignSet.has(nameLower) ? "aur" : "extra";
+        
+        if (updatesMap[nameLower]) {
+          pkg.hasUpdate = true;
+          pkg.newVersion = updatesMap[nameLower];
+          pkg.health = "warning";
+          pkg.healthDetails = `Version outdated. Update available to ${pkg.newVersion}.`;
+        } else {
+          pkg.hasUpdate = false;
+        }
+
         parsedPkgs.push(pkg as InstalledPackage);
       }
     }

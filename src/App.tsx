@@ -37,6 +37,7 @@ import BatchBuildProgressModal from "./components/BatchBuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
 import ArchForgeLogo from "./components/ArchForgeLogo";
 import SystemCleanupTab from "./components/SystemCleanupTab";
+import UninstallConfirmModal from "./components/UninstallConfirmModal";
 import AutoCleanupDaemon from "./components/AutoCleanupDaemon";
 import { playCompilationSuccessSound } from "./utils/audioHelper";
 
@@ -129,6 +130,9 @@ export default function App() {
   // Local system packages pagination
   const [localPage, setLocalPage] = useState<number>(1);
   const localItemsPerPage = 6;
+
+  // Uninstall confirm modal
+  const [uninstallingPkg, setUninstallingPkg] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalPage(1);
@@ -424,8 +428,13 @@ export default function App() {
     setShowUpgradeConfig(true);
   };
 
-  // Action: Uninstall packages from local cache
-  const handleUninstall = async (name: string) => {
+  // Action: Queue uninstall
+  const handleUninstall = (name: string) => {
+    setUninstallingPkg(name);
+  };
+
+  // Action: Execute actual uninstall
+  const executeUninstall = async (name: string) => {
     try {
       const pw = sessionStorage.getItem("archforge-sudopw") || "";
       const res = await fetch("/api/packages/uninstall", {
@@ -440,6 +449,8 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setUninstallingPkg(null);
     }
   };
 
@@ -600,41 +611,17 @@ export default function App() {
                     Synchronize with your Linux desktop GTK theme preferences or manually lock dark/light settings.
                   </p>
                 </div>
-                <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-                  <button
-                    onClick={() => setTheme("system")}
-                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border py-2.5 px-2 transition duration-150 cursor-pointer text-[10px] font-bold uppercase font-mono ${
-                      theme === "system"
-                        ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
-                        : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
-                    }`}
+                <div className="pt-2">
+                  <select
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value as "dark" | "light" | "system")}
+                    className="w-full rounded-lg border border-white/5 bg-zinc-900/50 px-3 py-2 text-xs font-semibold text-slate-200 outline-none hover:border-slate-550 transition font-mono cursor-pointer focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20"
                     title={`Locally resolved user GTK theme: ${resolvedSystemTheme === "dark" ? "Dark Theme" : "Light Theme"}`}
                   >
-                    <Monitor className="h-3.5 w-3.5 shrink-0" />
-                    <span>System Sync</span>
-                  </button>
-                  <button
-                    onClick={() => setTheme("dark")}
-                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border py-2.5 px-2 transition duration-150 cursor-pointer text-[10px] font-bold uppercase font-mono ${
-                      theme === "dark"
-                        ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
-                        : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
-                    }`}
-                  >
-                    <Moon className="h-3.5 w-3.5 shrink-0" />
-                    <span>Force Dark</span>
-                  </button>
-                  <button
-                    onClick={() => setTheme("light")}
-                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border py-2.5 px-2 transition duration-150 cursor-pointer text-[10px] font-bold uppercase font-mono ${
-                      theme === "light"
-                        ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_10px_rgba(var(--accent-rgb,6,182,212),0.05)]"
-                        : "border-white/5 bg-zinc-900/10 text-slate-400 hover:border-white/10 hover:text-white"
-                    }`}
-                  >
-                    <Sun className="h-3.5 w-3.5 shrink-0" />
-                    <span>Force Light</span>
-                  </button>
+                    <option value="system">System Display Sync</option>
+                    <option value="dark">Force Dark Theme</option>
+                    <option value="light">Force Light Theme</option>
+                  </select>
                 </div>
               </div>
 
@@ -1197,6 +1184,14 @@ export default function App() {
              onComplete={handleSyuCompilationSuccess}
              onCancel={() => setIsSyuUpgrade(false)}
              isRealArch={stats?.isRealArch}
+          />
+        )}
+
+        {uninstallingPkg && (
+          <UninstallConfirmModal
+            pkgName={uninstallingPkg}
+            onConfirm={() => executeUninstall(uninstallingPkg)}
+            onCancel={() => setUninstallingPkg(null)}
           />
         )}
       </AnimatePresence>

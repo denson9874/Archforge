@@ -3,6 +3,8 @@ import { X, Globe, Download, Trash, BookOpen, Clock, GitCommit, FileText, Chevro
 import { motion, AnimatePresence } from "motion/react";
 import { AurSearchResult, InstalledPackage } from "../types";
 
+import DependencyGraph from "./DependencyGraph";
+
 interface PackageDetailDrawerProps {
   pkgName: string;
   isAur: boolean;
@@ -241,44 +243,12 @@ export default function PackageDetailDrawer({
                 </span>
 
                 {/* Flow solver visual diagram components */}
-                <div className="relative rounded-xl border border-white/5 bg-white/2 p-4 font-mono">
-                  <div className="flex flex-col items-center gap-2">
-                    {/* Root Package */}
-                    <div className="flex items-center gap-2 rounded-lg bg-cyan-950/60 border border-cyan-800/80 px-4 py-2 text-cyan-300 font-semibold shadow-xl">
-                      <GitCommit className="h-4 w-4" />
-                      {pkgName}
-                    </div>
-
-                    <div className="h-4 w-0.5 bg-zinc-750"></div>
-
-                    {/* Groups container */}
-                    <div className="grid grid-cols-2 gap-4 w-full">
-                      {depsTree.map((g, gi) => (
-                        <div key={gi} className="rounded-lg bg-white/3 border border-white/5 p-2.5 flex flex-col items-center relative">
-                          <span className="text-[10px] text-zinc-400 mb-2 truncate font-semibold uppercase">{g.name}</span>
-                          <div className="space-y-1.5 w-full">
-                            {g.items.length > 0 ? (
-                              g.items.slice(0, 4).map((it, iii) => (
-                                <div key={iii} className="flex items-center gap-1.5 rounded bg-white/2 border border-white/5 px-2 py-1 text-[10px] text-slate-300">
-                                  <ChevronRight className="h-3 w-3 text-cyan-500/60 shrink-0" />
-                                  <span className="truncate">{it}</span>
-                                </div>
-                              ))
-                            ) : (
-                              <p className="text-[10px] text-zinc-600 italic">No dependencies found</p>
-                            )}
-                            {g.items.length > 4 && (
-                              <div className="text-[9px] text-zinc-500 italic text-center pt-1">
-                                + {g.items.length - 4} other dependencies
-                              </div>
-                            )}
-                          </div>
-                          {/* Anchor connector line */}
-                          <div className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 bg-zinc-700 -translate-y-4 hidden sm:block"></div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="relative rounded-xl border border-white/5 bg-white/2 p-1 font-mono h-[320px]">
+                  <DependencyGraph 
+                    pkgName={pkgName} 
+                    deps={metadata?.Depends || []} 
+                    makeDeps={metadata?.MakeDepends || []} 
+                  />
                 </div>
               </div>
             )}

@@ -30,6 +30,7 @@ export default function SystemCleanupTab() {
   
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [totalSpaceToFree, setTotalSpaceToFree] = useState("0 B");
+  const [showToast, setShowToast] = useState(false);
 
   // Auto-Cleanup Schedule states
   const [autoCleanEnabled, setAutoCleanEnabled] = useState(() => localStorage.getItem("archforge_autoclean") === "true");
@@ -118,6 +119,9 @@ export default function SystemCleanupTab() {
       if (data.success) {
         setCleanLogs(data.logs || []);
         setCleanComplete(true);
+        setShowToast(true);
+        setShowConfirmModal(false);
+        setTimeout(() => setShowToast(false), 4000);
         // Rescan after a short delay
         setTimeout(() => fetchScan(true), 3000);
       }
@@ -180,7 +184,22 @@ export default function SystemCleanupTab() {
 
               {results?.orphans && results.orphans.length > 0 && !isScanning && (
                 <div className="mt-4 text-xs font-mono">
-                  <p className="text-slate-500 mb-1.5 font-medium">Orphan packages:</p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-slate-500 font-medium">Orphan packages:</p>
+                    <button 
+                      onClick={() => {
+                        if (selectedOrphans.length === results.orphans.length) {
+                          setSelectedOrphans([]);
+                        } else {
+                          setSelectedOrphans([...results.orphans]);
+                        }
+                      }}
+                      disabled={!options.removeOrphans || isCleaning}
+                      className="text-[10px] text-cyan-500 hover:text-cyan-400 font-semibold px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {selectedOrphans.length === results.orphans.length ? "Deselect All" : "Select All"}
+                    </button>
+                  </div>
                   <ul className="space-y-1 max-h-24 overflow-y-auto bg-black/40 scrollbar-thin rounded-lg p-2.5 border border-white/5">
                     {results.orphans.map((pkg, i) => (
                       <li key={i} className="truncate flex items-center gap-2 text-slate-400">
@@ -447,7 +466,9 @@ export default function SystemCleanupTab() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowConfirmModal(false)}
+              onClick={() => {
+                if (!isCleaning) setShowConfirmModal(false);
+              }}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -484,24 +505,41 @@ export default function SystemCleanupTab() {
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button
-                  className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 bg-white/5 hover:bg-white/10 transition"
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 bg-white/5 hover:bg-white/10 transition disabled:opacity-50"
                   onClick={() => setShowConfirmModal(false)}
+                  disabled={isCleaning}
                 >
                   Cancel
                 </button>
                 <button
-                  className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/20 transition flex items-center gap-2"
-                  onClick={() => {
-                    setShowConfirmModal(false);
-                    handleCleanup();
-                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/20 transition flex items-center gap-2 disabled:opacity-50"
+                  onClick={() => handleCleanup()}
+                  disabled={isCleaning}
                 >
-                  <Trash2 className="h-4 w-4" />
-                  Confirm Execute
+                  {isCleaning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {isCleaning ? "Executing Cleanup..." : "Confirm Execute"}
                 </button>
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Toast %} */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md"
+          >
+            <CheckCircle2 className="h-5 w-5" />
+            <div>
+              <h4 className="font-bold text-sm">Cleanup Successful</h4>
+              <p className="text-xs text-emerald-400/80">Selected system areas have been cleared.</p>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
