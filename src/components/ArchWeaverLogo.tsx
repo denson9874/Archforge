@@ -1,17 +1,17 @@
 import React from "react";
 
-interface ArchForgeLogoProps {
+interface ArchWeaverLogoProps {
   className?: string;
   size?: number;
   animated?: boolean;
 }
 
-export default function ArchForgeLogo({
+export default function ArchWeaverLogo({
   className = "",
   size = 40,
   animated = true,
-}: ArchForgeLogoProps) {
-  // SVG for premium 3D stacked isometric squares representing ArchForge's compiling, layer-based, and forge-built ecosystem.
+}: ArchWeaverLogoProps) {
+  // SVG for premium 3D stacked isometric squares representing ArchWeaver's compiling, layer-based, and forge-built ecosystem.
   return (
     <svg
       width={size}
@@ -20,7 +20,7 @@ export default function ArchForgeLogo({
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={`select-none ${className}`}
-      id="archforge-stacked-squares-logo"
+      id="archweaver-stacked-squares-logo"
     >
       <defs>
         {/* Glow Filters */}

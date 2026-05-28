@@ -5,11 +5,16 @@ export default function AutoCleanupDaemon() {
   useEffect(() => {
     // Check every 2 minutes
     const interval = setInterval(async () => {
-      const enabled = localStorage.getItem("archforge_autoclean") === "true";
+      const enabled = (localStorage.getItem("archweaver_autoclean") || localStorage.getItem("archforge_autoclean")) === "true";
       if (!enabled) return;
 
-      const thresholdStr = localStorage.getItem("archforge_autoclean_threshold") || "2"; // in GB
+      const thresholdStr = localStorage.getItem("archweaver_autoclean_threshold") || localStorage.getItem("archforge_autoclean_threshold") || "2"; // in GB
       const thresholdMB = parseFloat(thresholdStr) * 1024;
+
+      // Skip if client is offline to prevent useless fetch calls throwing TypeError
+      if (typeof window !== "undefined" && window.navigator && !window.navigator.onLine) {
+        return;
+      }
 
       try {
         const scanRes = await fetch("/api/system/cleanup/scan");
@@ -34,8 +39,15 @@ export default function AutoCleanupDaemon() {
             })
           });
         }
-      } catch (err) {
-        console.error("Auto cleanup background task failed:", err);
+      } catch (err: any) {
+        const isFetchError = err instanceof TypeError || 
+          (err.message && (err.message.includes("fetch") || err.message.includes("NetworkError") || err.message.includes("Failed to fetch")));
+        
+        if (isFetchError) {
+          console.info("[AutoCleanup] Backend server temporarily unreachable or offline. Skipping cleanup cycle, will retry next turn.");
+        } else {
+          console.error("[AutoCleanup] Unexpected background task failure:", err);
+        }
       }
     }, 120000); // 120 seconds
 

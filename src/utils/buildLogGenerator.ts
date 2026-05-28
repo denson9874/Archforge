@@ -4,7 +4,7 @@
 export function generateBuildSteps(pkgName: string, pkgVersion: string, depends: string[] = []): { phase: string; lines: string[]; duration: number }[] {
   const steps: { phase: string; lines: string[]; duration: number }[] = [];
 
-  const cacheKey = `archforge-deps-cache-${pkgName}-${pkgVersion}`;
+  const cacheKey = `archweaver-deps-cache-${pkgName}-${pkgVersion}`;
   const isDepsCached = depends.length > 0 && localStorage.getItem(cacheKey) === "cached";
 
   // Phase 1: Dependency Check & Sync
@@ -178,7 +178,7 @@ export function generateBuildSteps(pkgName: string, pkgVersion: string, depends:
     duration: 1000,
     lines: [
       `==> Finished making package: ${pkgName} (compilation success)`,
-      `[sudo] password for archforge: `,
+      `[sudo] password for archweaver: `,
       `loading packages...`,
       `resolving dependencies...`,
       `looking for conflicting packages...`,

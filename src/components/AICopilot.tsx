@@ -14,12 +14,12 @@ interface Message {
 }
 
 export default function AICopilot() {
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("archforge-gemini-key") || "");
-  const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem("archforge-claude-key") || "");
-  const [openaiKey, setOpenaiKey] = useState(() => localStorage.getItem("archforge-openai-key") || "");
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem("archweaver-gemini-key") || localStorage.getItem("archforge-gemini-key") || "");
+  const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem("archweaver-claude-key") || localStorage.getItem("archforge-claude-key") || "");
+  const [openaiKey, setOpenaiKey] = useState(() => localStorage.getItem("archweaver-openai-key") || localStorage.getItem("archforge-openai-key") || "");
   
   const [activeModel, setActiveModel] = useState<"gemini" | "claude" | "openai">(() => {
-    return (localStorage.getItem("archforge-active-model") as any) || "gemini";
+    return (localStorage.getItem("archweaver-active-model") as any) || (localStorage.getItem("archforge-active-model") as any) || "gemini";
   });
 
   const [showKeys, setShowKeys] = useState(false);
@@ -28,7 +28,7 @@ export default function AICopilot() {
     {
       id: "initial",
       sender: "ai",
-      text: "Greetings, Commander. I am your ArchForge AI Copilot. I can audit PKGBUILD recipes for security, analyze container/host build failures, generate optimized package guides, and answer Arch administration questions. Configure your API keys below to unlock my advanced reasoning modules.",
+      text: "Greetings, Commander. I am your ArchWeaver AI Copilot. I can audit PKGBUILD recipes for security, analyze container/host build failures, generate optimized package guides, and answer Arch administration questions. Configure your API keys below to unlock my advanced reasoning modules.",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -39,19 +39,19 @@ export default function AICopilot() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem("archforge-gemini-key", geminiKey);
+    localStorage.setItem("archweaver-gemini-key", geminiKey);
   }, [geminiKey]);
 
   useEffect(() => {
-    localStorage.setItem("archforge-claude-key", anthropicKey);
+    localStorage.setItem("archweaver-claude-key", anthropicKey);
   }, [anthropicKey]);
 
   useEffect(() => {
-    localStorage.setItem("archforge-openai-key", openaiKey);
+    localStorage.setItem("archweaver-openai-key", openaiKey);
   }, [openaiKey]);
 
   useEffect(() => {
-    localStorage.setItem("archforge-active-model", activeModel);
+    localStorage.setItem("archweaver-active-model", activeModel);
   }, [activeModel]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -585,7 +585,7 @@ export default function AICopilot() {
               type="text"
               placeholder={
                 isLoading 
-                  ? "ArchForge Copilot is analyzing..." 
+                  ? "ArchWeaver Copilot is analyzing..." 
                   : "Ask about package installations, fixing dependencies, orphans scan, gpg signature issues..."
               }
               value={inputMessage}

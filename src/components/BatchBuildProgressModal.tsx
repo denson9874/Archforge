@@ -71,7 +71,7 @@ export default function BatchBuildProgressModal({
   const depends = currentPkg?.Depends || currentPkg?.depends || [];
 
   // Determine if we need to show the Auth Panel before starting the build
-  const needsAuth = systemRealArch === true && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
+  const needsAuth = systemRealArch === true && !sessionStorage.getItem("archweaver-sudopw") && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
 
   const [currentPhase, setCurrentPhase] = useState("");
   const [percentage, setPercentage] = useState(0);
@@ -128,7 +128,7 @@ export default function BatchBuildProgressModal({
 
   useEffect(() => {
     // If systemRealArch is not determined yet, or if we need auth first, do not initiate connection
-    if (systemRealArch === null || (systemRealArch === true && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted)) {
+    if (systemRealArch === null || (systemRealArch === true && !sessionStorage.getItem("archweaver-sudopw") && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted)) {
       return;
     }
 
@@ -153,7 +153,7 @@ export default function BatchBuildProgressModal({
     let logBuffer: string[] = [];
 
     // Connect to Server-Sent Events (SSE) stream to fetch live bare-metal command stdout
-    const savedSudoPw = sessionStorage.getItem("archforge-sudopw") || "";
+    const savedSudoPw = sessionStorage.getItem("archweaver-sudopw") || sessionStorage.getItem("archforge-sudopw") || "";
     const sseUrl = `/api/packages/install/stream?name=${encodeURIComponent(pkgName)}&pw=${encodeURIComponent(savedSudoPw)}`;
     let eventSource: EventSource | null = null;
 
@@ -302,18 +302,18 @@ export default function BatchBuildProgressModal({
 
             logBuffer = [
               ...logBuffer,
-              "==> \x1b[33m[ArchForge Self-Healer]\x1b[0m Analyzing compilation crash log signatures...",
+              "==> \x1b[33m[ArchWeaver Self-Healer]\x1b[0m Analyzing compilation crash log signatures...",
               "  -> Found signature match: 'gconf/gconf-client.h' not found in compiler directory indexing.",
               "  -> Root Cause: Missing upstream system shared library links on current root environment.",
-              "==> \x1b[33m[ArchForge Self-Healer]\x1b[0m Automatic fix applied: downloading missing library package 'extra/gconf'...",
+              "==> \x1b[33m[ArchWeaver Self-Healer]\x1b[0m Automatic fix applied: downloading missing library package 'extra/gconf'...",
               ":: Synchronizing package databases...",
               "   -> Fetching extra/gconf-3.2.6-1-x86_64.pkg.tar.zst...",
               "   -> Installing extra/gconf on virtual system environment...",
               "   (1/1) checking keys in keyring                    [######################] 100%",
               "   (1/1) checking package integrity                  [######################] 100%",
               "   (1/1) installing gconf                            [######################] 100%",
-              "==> \x1b[32m[ArchForge Self-Healer]\x1b[0m Library link registration succeeded. gconf hooks deployed.",
-              "==> \x1b[32m[ArchForge Self-Healer]\x1b[0m Adjusting build configuration Makefile. Resuming makepkg compiler core..."
+              "==> \x1b[32m[ArchWeaver Self-Healer]\x1b[0m Library link registration succeeded. gconf hooks deployed.",
+              "==> \x1b[32m[ArchWeaver Self-Healer]\x1b[0m Adjusting build configuration Makefile. Resuming makepkg compiler core..."
             ];
             setLogs([...logBuffer]);
 
@@ -426,7 +426,7 @@ export default function BatchBuildProgressModal({
       const data = await res.json();
       if (data.success) {
         if (rememberPw) {
-          sessionStorage.setItem("archforge-sudopw", sudoPwInput);
+          sessionStorage.setItem("archweaver-sudopw", sudoPwInput);
         }
         setAuthSubmitted(true);
       } else {
@@ -464,7 +464,7 @@ export default function BatchBuildProgressModal({
                 Authentication Required
               </h3>
               <p className="text-xs text-zinc-400">
-                You are running ArchForge on a bare metal machine. Sudo access is required to run standard <code className="text-cyan-400">makepkg</code> compiler instructions.
+                You are running ArchWeaver on a bare metal machine. Sudo access is required to run standard <code className="text-cyan-400">makepkg</code> compiler instructions.
               </p>
             </div>
 
@@ -519,7 +519,7 @@ export default function BatchBuildProgressModal({
 
   const handleExportLog = () => {
     const reportLines = [
-      "ArchForge Batch Compilation Report",
+      "ArchWeaver Batch Compilation Report",
       "==================================",
       `Date: ${new Date().toISOString()}`,
       "",
@@ -545,7 +545,7 @@ export default function BatchBuildProgressModal({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "archforge_batch_report.txt";
+    link.download = "archweaver_batch_report.txt";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

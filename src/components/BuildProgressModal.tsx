@@ -67,7 +67,7 @@ export default function BuildProgressModal({
   }, [isRealArch]);
 
   // Determine if we need to show the Auth Panel before starting the build
-  const needsAuth = systemRealArch === true && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
+  const needsAuth = systemRealArch === true && !sessionStorage.getItem("archweaver-sudopw") && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted;
 
   const [currentPhase, setCurrentPhase] = useState("");
   const [percentage, setPercentage] = useState(0);
@@ -137,7 +137,7 @@ export default function BuildProgressModal({
 
   useEffect(() => {
     // If systemRealArch is not determined yet, or if we need auth first, do not initiate connection
-    if (systemRealArch === null || (systemRealArch === true && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted)) {
+    if (systemRealArch === null || (systemRealArch === true && !sessionStorage.getItem("archweaver-sudopw") && !sessionStorage.getItem("archforge-sudopw") && !authSubmitted)) {
       return;
     }
 
@@ -147,7 +147,7 @@ export default function BuildProgressModal({
     // Reset logging screens and percent counts upon multi-attempt build retry
     if (buildAttempt > 1) {
       logBuffer = [
-        `\x1b[33m==> [ArchForge Shield Retry Node] Re-initiating compilation attempt #${buildAttempt}...\x1b[0m`,
+        `\x1b[33m==> [ArchWeaver Shield Retry Node] Re-initiating compilation attempt #${buildAttempt}...\x1b[0m`,
         `==> Setting expanded source fetch parameters for safe retrieval:`,
         `    • SRC_FETCH_TIMEOUT = ${fetchTimeout}s (Scaled from previous timeout limit)`,
         `    • NETWORK_RECOVERY_BUFFERS = ENABLED`,
@@ -165,7 +165,7 @@ export default function BuildProgressModal({
     }
 
     // Connect to Server-Sent Events (SSE) stream to fetch live bare-metal command stdout
-    const savedSudoPw = sessionStorage.getItem("archforge-sudopw") || "";
+    const savedSudoPw = sessionStorage.getItem("archweaver-sudopw") || sessionStorage.getItem("archforge-sudopw") || "";
     let sseUrl = `/api/packages/install/stream?name=${encodeURIComponent(pkgName)}&pw=${encodeURIComponent(savedSudoPw)}`;
     if (pkgName === "system-upgrade" && depends.length > 0) {
       sseUrl += `&packages=${encodeURIComponent(depends.join(","))}`;
@@ -318,18 +318,18 @@ export default function BuildProgressModal({
 
             logBuffer = [
               ...logBuffer,
-              "==> \x1b[33m[ArchForge Self-Healer]\x1b[0m Analyzing compilation crash log signatures...",
+              "==> \x1b[33m[ArchWeaver Self-Healer]\x1b[0m Analyzing compilation crash log signatures...",
               "  -> Found signature match: 'gconf/gconf-client.h' not found in compiler directory indexing.",
               "  -> Root Cause: Missing upstream system shared library links on current root environment.",
-              "==> \x1b[33m[ArchForge Self-Healer]\x1b[0m Automatic fix applied: downloading missing library package 'extra/gconf'...",
+              "==> \x1b[33m[ArchWeaver Self-Healer]\x1b[0m Automatic fix applied: downloading missing library package 'extra/gconf'...",
               ":: Synchronizing package databases...",
               "   -> Fetching extra/gconf-3.2.6-1-x86_64.pkg.tar.zst...",
               "   -> Installing extra/gconf on virtual system environment...",
               "   (1/1) checking keys in keyring                    [######################] 100%",
               "   (1/1) checking package integrity                  [######################] 100%",
               "   (1/1) installing gconf                            [######################] 100%",
-              "==> \x1b[32m[ArchForge Self-Healer]\x1b[0m Library link registration succeeded. gconf hooks deployed.",
-              "==> \x1b[32m[ArchForge Self-Healer]\x1b[0m Adjusting build configuration Makefile. Resuming makepkg compiler core..."
+              "==> \x1b[32m[ArchWeaver Self-Healer]\x1b[0m Library link registration succeeded. gconf hooks deployed.",
+              "==> \x1b[32m[ArchWeaver Self-Healer]\x1b[0m Adjusting build configuration Makefile. Resuming makepkg compiler core..."
             ];
             setLogs([...logBuffer]);
 
@@ -459,7 +459,7 @@ export default function BuildProgressModal({
                 Authentication Required
               </h3>
               <p className="text-xs text-zinc-400 font-sans max-w-sm">
-                ArchForge requires administrative privileges on your local system to compile, resolve dependencies, and register <span className="text-cyan-400 font-mono font-bold">{pkgName}</span>.
+                ArchWeaver requires administrative privileges on your local system to compile, resolve dependencies, and register <span className="text-cyan-400 font-mono font-bold">{pkgName}</span>.
               </p>
             </div>
           </div>
@@ -468,7 +468,7 @@ export default function BuildProgressModal({
             onSubmit={(e) => {
               e.preventDefault();
               if (rememberPw) {
-                sessionStorage.setItem("archforge-sudopw", sudoPwInput);
+                sessionStorage.setItem("archweaver-sudopw", sudoPwInput);
               }
               setAuthSubmitted(true);
             }}

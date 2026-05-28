@@ -50,7 +50,7 @@ async function createSecureSudoWrapper(password: string) {
     return { wrapperPath: null, cleanup: async () => {} };
   }
   const id = Math.random().toString(36).substring(2, 10);
-  const wrapperDir = path.join(os.tmpdir(), `archforge-auth-${id}`);
+  const wrapperDir = path.join(os.tmpdir(), `archweaver-auth-${id}`);
   await fs.promises.mkdir(wrapperDir, { recursive: true });
 
   const pwFile = path.join(wrapperDir, ".pw");
@@ -340,10 +340,10 @@ async function runFullAURIndexing() {
 // Smart startup initiation - only run full index build in background after delay AND only if there is no cache
 setTimeout(() => {
   if (aurDatabaseIndex.length <= initialAurSeeds.length) {
-    console.log("[ArchForge Perf] No pre-existing cache found. Building full index in background...");
+    console.log("[ArchWeaver Perf] No pre-existing cache found. Building full index in background...");
     runFullAURIndexing().catch(err => console.error("Startup full index trigger error:", err));
   } else {
-    console.log(`[ArchForge Perf] Instant launch: loaded ${aurDatabaseIndex.length} packages from cache. Postponing automatic index rebuild.`);
+    console.log(`[ArchWeaver Perf] Instant launch: loaded ${aurDatabaseIndex.length} packages from cache. Postponing automatic index rebuild.`);
   }
 }, 15000);
 
@@ -479,7 +479,7 @@ try {
   if (isRealArch) {
     console.log("==========================================================");
     console.log("🔥 BARE-METAL ARCH LINUX CORE DETECTED!");
-    console.log("ArchForge has unlocked real system pacman / makepkg access.");
+    console.log("ArchWeaver has unlocked real system pacman / makepkg access.");
     console.log("Direct bare-metal package operations are active.");
     console.log("==========================================================");
   }
@@ -699,7 +699,7 @@ async function findPackage(name: string): Promise<InstalledPackage | undefined> 
 // Auto-clear AUR (UR) and build caches upon launch
 function clearAurAndBuildCacheOnStartup() {
   try {
-    console.log("==> [ArchForge Compiler Setup] Auto-clearing all AUR and build caches upon launch...");
+    console.log("==> [ArchWeaver Compiler Setup] Auto-clearing all AUR and build caches upon launch...");
     
     // Clear in-memory simulated AUR cache files list
     simulatedAurCacheFiles = [];
@@ -711,12 +711,12 @@ function clearAurAndBuildCacheOnStartup() {
       try {
         fs.rmSync(aurCachePath, { recursive: true, force: true });
         fs.mkdirSync(aurCachePath, { recursive: true });
-        console.log(`==> [ArchForge Compiler Setup] Successfully cleared physical AUR and build cache directory: ${aurCachePath}`);
+        console.log(`==> [ArchWeaver Compiler Setup] Successfully cleared physical AUR and build cache directory: ${aurCachePath}`);
       } catch (e: any) {
-        console.warn(`[ArchForge Compiler Setup] Direct physical cleanup skipped for ${aurCachePath} (Reason: ${e.message})`);
+        console.warn(`[ArchWeaver Compiler Setup] Direct physical cleanup skipped for ${aurCachePath} (Reason: ${e.message})`);
       }
     } else {
-      console.log(`==> [ArchForge Compiler Setup] Physical AUR build cache directory (~/.cache/yay) is already clean or uninitialized.`);
+      console.log(`==> [ArchWeaver Compiler Setup] Physical AUR build cache directory (~/.cache/yay) is already clean or uninitialized.`);
     }
 
     // Clear any extra source cache dirs
@@ -725,10 +725,10 @@ function clearAurAndBuildCacheOnStartup() {
       if (fs.existsSync(sourcesCachePath)) {
         fs.rmSync(sourcesCachePath, { recursive: true, force: true });
         fs.mkdirSync(sourcesCachePath, { recursive: true });
-        console.log(`==> [ArchForge Compiler Setup] Successfully cleared external sources compiler cache: ${sourcesCachePath}`);
+        console.log(`==> [ArchWeaver Compiler Setup] Successfully cleared external sources compiler cache: ${sourcesCachePath}`);
       }
     } catch (e: any) {
-      console.warn(`[ArchForge Compiler Setup] Direct physical cleanup skipped for /var/cache/sources (Reason: ${e.message})`);
+      console.warn(`[ArchWeaver Compiler Setup] Direct physical cleanup skipped for /var/cache/sources (Reason: ${e.message})`);
     }
   } catch (err: any) {
     console.error("Failed to clear AUR and build cache on launch:", err);
@@ -843,7 +843,7 @@ async function startServer() {
 
     if (isRealArch) {
       try {
-        console.log(`[ArchForge] Invoking pkexec/sudo to uninstall ${sanitizedName}...`);
+        console.log(`[ArchWeaver] Invoking pkexec/sudo to uninstall ${sanitizedName}...`);
         if (pw) {
           const child = spawn("sudo", ["-S", "pacman", "-Rns", "--noconfirm", sanitizedName]);
           child.stdin.write(pw + "\n");
@@ -867,7 +867,7 @@ async function startServer() {
         lastCacheUpdate = 0;
         return res.json({ success: true, message: `Host package uninstalled successfully.` });
       } catch (err: any) {
-        console.error(`[ArchForge] Uninstallation failed:`, err);
+        console.error(`[ArchWeaver] Uninstallation failed:`, err);
         return res.status(500).json({ error: `Privilege escalation or package removal failed: ${err.message}` });
       }
     }
@@ -985,11 +985,11 @@ async function startServer() {
       const isAppImage = !!process.env.APPIMAGE;
       const appImagePath = process.env.APPIMAGE || process.execPath;
       const homeDir = os.homedir();
-      const desktopFilePath = path.join(homeDir, ".local/share/applications/archforge.desktop");
+      const desktopFilePath = path.join(homeDir, ".local/share/applications/archweaver.desktop");
       let isInstalled = false;
       if (fs.existsSync(desktopFilePath)) {
         const fileContent = fs.readFileSync(desktopFilePath, "utf8");
-        if (fileContent.includes("ArchForge")) {
+        if (fileContent.includes("ArchWeaver")) {
           isInstalled = true;
         }
       }
@@ -1064,10 +1064,10 @@ async function startServer() {
       const isAppImage = !!process.env.APPIMAGE;
       
       // Default executable destination
-      let targetPath = path.join(binDir, "ArchForge.AppImage");
+      let targetPath = path.join(binDir, "ArchWeaver.AppImage");
       
       if (isAppImage) {
-        console.log(`[ArchForge Integrator] Copying AppImage from ${currentBinary} to ${targetPath}...`);
+        console.log(`[ArchWeaver Integrator] Copying AppImage from ${currentBinary} to ${targetPath}...`);
         await fs.promises.copyFile(currentBinary, targetPath);
         await fs.promises.chmod(targetPath, 0o755);
       } else {
@@ -1075,19 +1075,19 @@ async function startServer() {
       }
 
       // Download / Create the desktop launcher icon across all standard GTK locations
-      const localIconPath = path.join(iconDir, "archforge.png");
+      const localIconPath = path.join(iconDir, "archweaver.png");
       let iconBuffer: Buffer | null = null;
       try {
-        console.log("[ArchForge Integrator] Fetching application launcher icon...");
+        console.log("[ArchWeaver Integrator] Fetching application launcher icon...");
         const response = await fetch("https://cdn-icons-png.flaticon.com/512/9356/9356230.png");
         const arrayBuffer = await response.arrayBuffer();
         iconBuffer = Buffer.from(arrayBuffer);
         await fs.promises.writeFile(localIconPath, iconBuffer);
       } catch (err) {
         const srcIconCandidates = [
-          path.join(__dirname, "archforge.png"),
-          path.join(__dirname, "..", "archforge.png"),
-          path.join(process.cwd(), "archforge.png")
+          path.join(__dirname, "archweaver.png"),
+          path.join(__dirname, "..", "archweaver.png"),
+          path.join(process.cwd(), "archweaver.png")
         ];
         for (const candidate of srcIconCandidates) {
           if (fs.existsSync(candidate)) {
@@ -1106,17 +1106,17 @@ async function startServer() {
       // Copy matching launcher icon into hicolor theme icons and legacy icon directory to ensure file manager and panel integration
       if (iconBuffer && iconBuffer.length > 0) {
         const iconPathsToPopulate = [
-          path.join(homeDir, ".icons", "archforge.png"),
-          path.join(homeDir, ".local/share/icons/hicolor/48x48/apps/archforge.png"),
-          path.join(homeDir, ".local/share/icons/hicolor/256x256/apps/archforge.png"),
-          path.join(homeDir, ".local/share/icons/hicolor/512x512/apps/archforge.png"),
+          path.join(homeDir, ".icons", "archweaver.png"),
+          path.join(homeDir, ".local/share/icons/hicolor/48x48/apps/archweaver.png"),
+          path.join(homeDir, ".local/share/icons/hicolor/256x256/apps/archweaver.png"),
+          path.join(homeDir, ".local/share/icons/hicolor/512x512/apps/archweaver.png"),
         ];
         for (const p of iconPathsToPopulate) {
           try {
             await fs.promises.mkdir(path.dirname(p), { recursive: true });
             await fs.promises.writeFile(p, iconBuffer);
           } catch (e) {
-            console.warn(`[ArchForge Icon Installer] Could not write icon target ${p}:`, e);
+            console.warn(`[ArchWeaver Icon Installer] Could not write icon target ${p}:`, e);
           }
         }
         // Force refresh system GTK icon cache databases
@@ -1127,16 +1127,16 @@ async function startServer() {
       }
 
       // Generate .desktop entry
-      const desktopFilePath = path.join(applicationsDir, "archforge.desktop");
+      const desktopFilePath = path.join(applicationsDir, "archweaver.desktop");
       const desktopTemplate = `[Desktop Entry]
 Type=Application
-Name=ArchForge Manager
+Name=ArchWeaver Manager
 Exec=${targetPath} --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
 Icon=${localIconPath}
 Comment=Bare-metal Arch Linux package and AUR repository manager
 Categories=System;Utility;Settings;PackageManager;
 Terminal=false
-StartupWMClass=ArchForge
+StartupWMClass=ArchWeaver
 `;
 
       await fs.promises.writeFile(desktopFilePath, desktopTemplate, "utf8");
@@ -1148,13 +1148,13 @@ StartupWMClass=ArchForge
 
       res.json({
         success: true,
-        message: "Successfully installed ArchForge Manager to your local application menu!",
+        message: "Successfully installed ArchWeaver Manager to your local application menu!",
         desktopPath: desktopFilePath,
         executablePath: targetPath,
         iconPath: localIconPath
       });
     } catch (err: any) {
-      console.error("[ArchForge Integrator] Setup failed:", err);
+      console.error("[ArchWeaver Integrator] Setup failed:", err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -1360,7 +1360,7 @@ StartupWMClass=ArchForge
 
     const proc = activeProcesses.get(sanitizedName);
     if (proc && proc.stdin) {
-      console.log(`[ArchForge Authenticator] Writing credentials to stdin for active process: ${sanitizedName}`);
+      console.log(`[ArchWeaver Authenticator] Writing credentials to stdin for active process: ${sanitizedName}`);
       proc.stdin.write(password + "\n");
       return res.json({ success: true, message: "Credentials successfully wrote to terminal stdin." });
     } else {
@@ -1428,10 +1428,10 @@ StartupWMClass=ArchForge
     }
 
     // Direct AUR compilation workflow executing on physical bare-metal hardware!
-    sendLine(`==> [ArchForge Native Engine] Dispatching build pipeline for: ${sanitizedName}`);
+    sendLine(`==> [ArchWeaver Native Engine] Dispatching build pipeline for: ${sanitizedName}`);
 
     if (sanitizedName === "system-upgrade") {
-      sendLine(`==> [ArchForge System Upgrade] Initializing full base-system upgrade...`);
+      sendLine(`==> [ArchWeaver System Upgrade] Initializing full base-system upgrade...`);
       sendLine(`==> Authentication prompts may request permission to run system update operations.`);
       
       let wrapper: any = null;
@@ -1487,7 +1487,7 @@ StartupWMClass=ArchForge
           await wrapper.cleanup();
         }
         if (exitCode === 0) {
-          sendLine(`==> [ArchForge] SYSTEM UPGRADE SUCCEEDED: System packages are fully upgraded!`);
+          sendLine(`==> [ArchWeaver] SYSTEM UPGRADE SUCCEEDED: System packages are fully upgraded!`);
         } else {
           sendLine(`error: System upgrade tool returned error code: ${exitCode}`);
         }
@@ -1499,7 +1499,7 @@ StartupWMClass=ArchForge
       return;
     }
 
-    const buildWorkspace = path.join(os.tmpdir(), "archforge-builds", sanitizedName);
+    const buildWorkspace = path.join(os.tmpdir(), "archweaver-builds", sanitizedName);
 
     try {
       // 1. Clean and configure fresh temporary build directory on root filesystem
@@ -1507,7 +1507,7 @@ StartupWMClass=ArchForge
         try {
           await fs.promises.rm(buildWorkspace, { recursive: true, force: true });
         } catch (e) {
-          console.warn(`[ArchForge Builder] Could not fully rm transient folder ${buildWorkspace}:`, e);
+          console.warn(`[ArchWeaver Builder] Could not fully rm transient folder ${buildWorkspace}:`, e);
         }
       }
       await fs.promises.mkdir(buildWorkspace, { recursive: true });
@@ -1605,7 +1605,7 @@ StartupWMClass=ArchForge
               if (wrapper) {
                 await wrapper.cleanup();
               }
-              sendLine(`==> [ArchForge] COMPILATION SUCCEEDED: Package '${sanitizedName}' registered successfully on bare-metal database!`);
+              sendLine(`==> [ArchWeaver] COMPILATION SUCCEEDED: Package '${sanitizedName}' registered successfully on bare-metal database!`);
               // Clear memory cache so that installed lists are updated immediately
               cachedPackages = [];
               lastCacheUpdate = 0;
@@ -1615,7 +1615,7 @@ StartupWMClass=ArchForge
               // Check if we can auto-repair missing GPG signatures
               if (encounteredKeys.size > 0 && !hasRetried) {
                 hasRetried = true;
-                sendLine(`\n🔧 [ArchForge AutoRepair] Detected missing PGP signature public keys: ${Array.from(encounteredKeys).join(", ")}`);
+                sendLine(`\n🔧 [ArchWeaver AutoRepair] Detected missing PGP signature public keys: ${Array.from(encounteredKeys).join(", ")}`);
                 sendLine(`==> Procuring missing keys from official GnuPG keyservers...`);
                 
                 let allImported = true;
@@ -1637,7 +1637,7 @@ StartupWMClass=ArchForge
                 }
                 
                 if (allImported) {
-                  sendLine(`\n⚡ [ArchForge AutoRepair] All PGP keys recovered successfully. Restarting makepkg compiler auto-pipeline...`);
+                  sendLine(`\n⚡ [ArchWeaver AutoRepair] All PGP keys recovered successfully. Restarting makepkg compiler auto-pipeline...`);
                   // Clean up previous wrappers if they exist
                   if (wrapper) {
                     try { await wrapper.cleanup(); } catch {}
@@ -1667,7 +1667,7 @@ StartupWMClass=ArchForge
               sendLine(`error: AUR build makepkg exited with error code: ${exitCode}`);
               if (hasFakerootError || exitCode === 15) {
                 sendLine("");
-                sendLine(`💡 [ArchForge Help: Environment Setup Needed]`);
+                sendLine(`💡 [ArchWeaver Help: Environment Setup Needed]`);
                 sendLine(`It appears your Arch Linux installation is missing essential compilation tools (like fakeroot).`);
                 sendLine(`To enable package building from AUR source trees, install the core development package suite:`);
                 sendLine(`👉  sudo pacman -S --needed base-devel`);
@@ -2071,7 +2071,7 @@ package() {
   // Bind server to port dynamically, automatically trying alternative ports if current port is occupied
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
-    (global as any).archforgePort = PORT;
+    (global as any).archweaverPort = PORT;
   });
 
   server.on("error", (err: any) => {
@@ -2088,11 +2088,11 @@ package() {
   if (process.argv.includes("--desktop") && !process.versions.electron) {
     setTimeout(() => {
       const url = `http://localhost:${PORT}`;
-      console.log(`\n🚀 [ArchForge Desktop Mode] Launching frameless bare-metal app window...`);
+      console.log(`\n🚀 [ArchWeaver Desktop Mode] Launching frameless bare-metal app window...`);
       
       const commands = [
-        `chromium --app=${url} --class=ArchForge --name=ArchForge`,
-        `google-chrome --app=${url} --class=ArchForge --name=ArchForge`,
+        `chromium --app=${url} --class=ArchWeaver --name=ArchWeaver`,
+        `google-chrome --app=${url} --class=ArchWeaver --name=ArchWeaver`,
         `xdg-open ${url}`
       ];
 

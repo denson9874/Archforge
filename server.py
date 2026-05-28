@@ -37,7 +37,7 @@ def save_aur_index_to_cache():
                 json.dump(aur_database_index, f, indent=2)
             os.replace(temp_path, cache_file_path)
         except Exception as e:
-            print("[ArchForge] Error saving index atomically to temporary file:", e)
+            print("[ArchWeaver] Error saving index atomically to temporary file:", e)
             if os.path.exists(temp_path):
                 try: os.unlink(temp_path)
                 except: pass
@@ -297,7 +297,7 @@ def run_full_aur_indexing():
                 "Maintainer": f"user_{random.randint(100, 999)}",
                 "LastModified": int(time.time()) - random.randint(1, 100) * 24 * 3600,
                 "FirstSubmitted": int(time.time()) - random.randint(101, 500) * 24 * 3600,
-                "URL": f"https://github.com/archforge/{gen_name}"
+                "URL": f"https://github.com/archweaver/{gen_name}"
             }
             new_index.append(item)
             new_map[gen_name.lower()] = {"index": len(new_index) - 1, "pkg": item}
@@ -461,7 +461,7 @@ IS_REAL_ARCH = shutil.which("pacman") is not None
 if IS_REAL_ARCH:
     print("==========================================================")
     print("🔥 BARE-METAL ARCH LINUX CORE DETECTED (PYTHON EMITTER)!")
-    print("ArchForge Python execution engine maps native local pacman.")
+    print("ArchWeaver Python execution engine maps native local pacman.")
     print("==========================================================")
 else:
     print("==========================================================")
@@ -682,7 +682,7 @@ def create_secure_sudo_wrapper(password):
     if not password:
         return None, lambda: None
     id_str = os.urandom(4).hex()
-    wrapper_dir = os.path.join(tempfile.gettempdir(), f"archforge-auth-{id_str}")
+    wrapper_dir = os.path.join(tempfile.gettempdir(), f"archweaver-auth-{id_str}")
     os.makedirs(wrapper_dir, exist_ok=True)
     
     pw_file = os.path.join(wrapper_dir, ".pw")
@@ -795,11 +795,11 @@ class StandaloneRouter(BaseHTTPRequestHandler):
             is_appimage = "APPIMAGE" in os.environ
             appimage_path = os.environ.get("APPIMAGE", sys.executable)
             home_dir = os.path.expanduser("~")
-            desktop_file_path = os.path.join(home_dir, ".local", "share", "applications", "archforge.desktop")
+            desktop_file_path = os.path.join(home_dir, ".local", "share", "applications", "archweaver.desktop")
             is_installed = False
             if os.path.exists(desktop_file_path):
                 with open(desktop_file_path, "r", encoding="utf-8") as f:
-                    if "ArchForge" in f.read():
+                    if "ArchWeaver" in f.read():
                         is_installed = True
             self.send_json({
                 "isAppImage": is_appimage,
@@ -1468,24 +1468,24 @@ package() {{
                 
                 is_appimage = "APPIMAGE" in os.environ
                 current_binary = os.environ.get("APPIMAGE", sys.executable)
-                target_path = os.path.join(bin_dir, "ArchForge.AppImage") if is_appimage else current_binary
+                target_path = os.path.join(bin_dir, "ArchWeaver.AppImage") if is_appimage else current_binary
                 
                 if is_appimage:
                     print(f"Copying AppImage to {target_path}")
                     shutil.copyfile(current_binary, target_path)
                     os.chmod(target_path, 0o755)
                     
-                local_icon_path = os.path.join(icon_dir, "archforge.svg")
+                local_icon_path = os.path.join(icon_dir, "archweaver.svg")
                 logo_content = b""
                 try:
-                    workspace_logo_path = os.path.join(os.getcwd(), "archforge_logo.svg")
+                    workspace_logo_path = os.path.join(os.getcwd(), "archweaver_logo.svg")
                     if os.path.exists(workspace_logo_path):
                         with open(workspace_logo_path, "rb") as lf:
                             logo_content = lf.read()
                     else:
-                        print("[ArchForge Python Installer] Warn: archforge_logo.svg not found in directory root.")
+                        print("[ArchWeaver Python Installer] Warn: archweaver_logo.svg not found in directory root.")
                 except Exception as e:
-                    print("[ArchForge Python Installer] Err: failed reading archforge_logo.svg from source:", e)
+                    print("[ArchWeaver Python Installer] Err: failed reading archweaver_logo.svg from source:", e)
 
                 if logo_content:
                     with open(local_icon_path, "wb") as f_icon:
@@ -1497,11 +1497,11 @@ package() {{
 
                 # Clean up any legacy or stale png icons to avoid desktop managers preferring stale png references
                 old_png_paths = [
-                    os.path.join(icon_dir, "archforge.png"),
-                    os.path.join(home_dir, ".icons", "archforge.png"),
-                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archforge.png"),
-                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "256x256", "apps", "archforge.png"),
-                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "512x512", "apps", "archforge.png"),
+                    os.path.join(icon_dir, "archweaver.png"),
+                    os.path.join(home_dir, ".icons", "archweaver.png"),
+                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archweaver.png"),
+                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "256x256", "apps", "archweaver.png"),
+                    os.path.join(home_dir, ".local", "share", "icons", "hicolor", "512x512", "apps", "archweaver.png"),
                 ]
                 for old_png in old_png_paths:
                     try:
@@ -1513,9 +1513,9 @@ package() {{
                 # Copy scalable SVG icon into multiple standard GTK themes directories to ensure DE cache updates
                 if logo_content and len(logo_content) > 0:
                     icon_paths_to_populate = [
-                        os.path.join(home_dir, ".icons", "archforge.svg"),
-                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "scalable", "apps", "archforge.svg"),
-                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archforge.svg"),
+                        os.path.join(home_dir, ".icons", "archweaver.svg"),
+                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "scalable", "apps", "archweaver.svg"),
+                        os.path.join(home_dir, ".local", "share", "icons", "hicolor", "48x48", "apps", "archweaver.svg"),
                     ]
                     for path_to_write in icon_paths_to_populate:
                         try:
@@ -1523,7 +1523,7 @@ package() {{
                             with open(path_to_write, "wb") as f:
                                 f.write(logo_content)
                         except Exception as e:
-                            print(f"[ArchForge Python Installer] Warn: could not write icon to {path_to_write}: {e}")
+                            print(f"[ArchWeaver Python Installer] Warn: could not write icon to {path_to_write}: {e}")
                             
                     # Force update GTK / applications launcher caches
                     try:
@@ -1538,23 +1538,23 @@ package() {{
                     pass
 
                 # Create desktop file with path pointing to the custom vector icon
-                desktop_file_path = os.path.join(applications_dir, "archforge.desktop")
+                desktop_file_path = os.path.join(applications_dir, "archweaver.desktop")
                 desktop_template = f"""[Desktop Entry]
 Type=Application
-Name=ArchForge Manager
+Name=ArchWeaver Manager
 Exec={target_path} --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
 Icon={local_icon_path}
 Comment=Bare-metal Arch Linux package and AUR repository manager
 Categories=System;Utility;Settings;PackageManager;
 Terminal=false
-StartupWMClass=ArchForge
+StartupWMClass=ArchWeaver
 """
                 with open(desktop_file_path, "w", encoding="utf-8") as f:
                     f.write(desktop_template)
                     
                 self.send_json({
                     "success": True,
-                    "message": "Successfully installed ArchForge Manager launcher inside your environment!",
+                    "message": "Successfully installed ArchWeaver Manager launcher inside your environment!",
                     "desktopPath": desktop_file_path,
                     "executablePath": target_path,
                     "iconPath": local_icon_path
@@ -1667,10 +1667,10 @@ StartupWMClass=ArchForge
             return
 
         # Direct AUR pipeline execution on physical bare metal!
-        send_line(f"==> [ArchForge Native Engine] Dispatching build pipeline for: {sanitized_name}")
+        send_line(f"==> [ArchWeaver Native Engine] Dispatching build pipeline for: {sanitized_name}")
 
         if sanitized_name == "system-upgrade":
-            send_line("==> [ArchForge System Upgrade] Initializing full base-system upgrade...")
+            send_line("==> [ArchWeaver System Upgrade] Initializing full base-system upgrade...")
             send_line("==> Authentication prompts may request permission to run update operations.")
             
             exec_args = ["pacman", "-Syu", "--noconfirm"]
@@ -1715,7 +1715,7 @@ StartupWMClass=ArchForge
                 active_processes.pop("system-upgrade", None)
                 
             if proc.returncode == 0:
-                send_line("==> [ArchForge] SYSTEM UPGRADE SUCCEEDED: System packages are fully upgraded!")
+                send_line("==> [ArchWeaver] SYSTEM UPGRADE SUCCEEDED: System packages are fully upgraded!")
             else:
                 send_line(f"error: System upgrade tool returned exit code: {proc.returncode}")
                 
@@ -1728,7 +1728,7 @@ StartupWMClass=ArchForge
             return
 
         # Single AUR Package build compilation
-        build_workspace = os.path.join(tempfile.gettempdir(), "archforge-builds", sanitized_name)
+        build_workspace = os.path.join(tempfile.gettempdir(), "archweaver-builds", sanitized_name)
         
         try:
             if os.path.exists(build_workspace):
@@ -1801,7 +1801,7 @@ StartupWMClass=ArchForge
                     
                 if makepkg_proc.returncode == 0:
                     cleanup_func()
-                    send_line(f"==> [ArchForge] COMPILATION SUCCEEDED: Package '{sanitized_name}' registered successfully!")
+                    send_line(f"==> [ArchWeaver] COMPILATION SUCCEEDED: Package '{sanitized_name}' registered successfully!")
                     global cached_packages, last_cache_update
                     cached_packages = []
                     last_cache_update = 0
@@ -1811,7 +1811,7 @@ StartupWMClass=ArchForge
                 else:
                     if encountered_keys and not has_retried:
                         has_retried = True
-                        send_line(f"\n🔧 [ArchForge AutoRepair] Detected missing GPG signature keys: {', '.join(encountered_keys)}")
+                        send_line(f"\n🔧 [ArchWeaver AutoRepair] Detected missing GPG signature keys: {', '.join(encountered_keys)}")
                         send_line("==> Importing missing signatures from keyservers...")
                         
                         all_imported = True
@@ -1830,7 +1830,7 @@ StartupWMClass=ArchForge
                                     all_imported = False
                                     
                         if all_imported:
-                            send_line("\n⚡ [ArchForge AutoRepair] All PGP keys recovered successfully. Restarting compiling process...")
+                            send_line("\n⚡ [ArchWeaver AutoRepair] All PGP keys recovered successfully. Restarting compiling process...")
                             cleanup_func()
                             launch_makepkg_inner()
                             return
@@ -1838,7 +1838,7 @@ StartupWMClass=ArchForge
                     cleanup_func()
                     send_line(f"error: AUR build makepkg exited with code: {makepkg_proc.returncode}")
                     if has_fakeroot_error or makepkg_proc.returncode == 15:
-                        send_line("\n💡 [ArchForge Help: Environment Setup Needed]")
+                        send_line("\n💡 [ArchWeaver Help: Environment Setup Needed]")
                         send_line("It appears your bare-metal system is missing compilation toolchains (like fakeroot).")
                         send_line("To resolve, establish your local compilation tools via:")
                         send_line("👉  sudo pacman -S --needed base-devel\n")

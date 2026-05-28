@@ -33,15 +33,16 @@ export default function SystemCleanupTab() {
   const [showToast, setShowToast] = useState(false);
 
   // Auto-Cleanup Schedule states
-  const [autoCleanEnabled, setAutoCleanEnabled] = useState(() => localStorage.getItem("archforge_autoclean") === "true");
-  const [autoCleanThreshold, setAutoCleanThreshold] = useState(() => localStorage.getItem("archforge_autoclean_threshold") || "2");
+  const [autoCleanEnabled, setAutoCleanEnabled] = useState(() => (localStorage.getItem("archweaver_autoclean") || localStorage.getItem("archforge_autoclean")) === "true");
+  const [autoCleanThreshold, setAutoCleanThreshold] = useState(() => localStorage.getItem("archweaver_autoclean_threshold") || localStorage.getItem("archforge_autoclean_threshold") || "2");
 
   useEffect(() => {
-    localStorage.setItem("archforge_autoclean", autoCleanEnabled.toString());
+    localStorage.setItem("archweaver_autoclean", autoCleanEnabled.toString());
   }, [autoCleanEnabled]);
 
   useEffect(() => {
-    localStorage.setItem("archforge_autoclean_threshold", autoCleanThreshold);
+    localStorage.setItem("archweaver-theme", "dark"); // compatibility sync
+    localStorage.setItem("archweaver_autoclean_threshold", autoCleanThreshold);
   }, [autoCleanThreshold]);
 
   useEffect(() => {

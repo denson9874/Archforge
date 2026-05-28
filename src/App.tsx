@@ -35,7 +35,7 @@ import PackageDetailDrawer from "./components/PackageDetailDrawer";
 import BuildProgressModal from "./components/BuildProgressModal";
 import BatchBuildProgressModal from "./components/BatchBuildProgressModal";
 import UpgradeConfigModal from "./components/UpgradeConfigModal";
-import ArchForgeLogo from "./components/ArchForgeLogo";
+import ArchWeaverLogo from "./components/ArchWeaverLogo";
 import SystemCleanupTab from "./components/SystemCleanupTab";
 import UninstallConfirmModal from "./components/UninstallConfirmModal";
 import AutoCleanupDaemon from "./components/AutoCleanupDaemon";
@@ -102,14 +102,14 @@ export default function App() {
 
   // Theme & Custom Accent Color States
   const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
-    return (localStorage.getItem("archforge-theme") as "dark" | "light" | "system") || "system";
+    return (localStorage.getItem("archweaver-theme") as "dark" | "light" | "system") || (localStorage.getItem("archforge-theme") as "dark" | "light" | "system") || "system";
   });
   const [themeOption, setThemeOption] = useState<"classic" | "matrix" | "cyberpunk" | "nordic" | "warm-autumn">(() => {
-    return (localStorage.getItem("archforge-theme-option") as any) || "classic";
+    return (localStorage.getItem("archweaver-theme-option") as any) || (localStorage.getItem("archforge-theme-option") as any) || "classic";
   });
   const [resolvedSystemTheme, setResolvedSystemTheme] = useState<"dark" | "light">("dark");
   const [accentColor, setAccentColor] = useState<string>(() => {
-    return localStorage.getItem("archforge-accent") || "#22d3ee";
+    return localStorage.getItem("archweaver-accent") || localStorage.getItem("archforge-accent") || "#22d3ee";
   });
   const [showSettings, setShowSettings] = useState<boolean>(false);
   
@@ -189,17 +189,17 @@ export default function App() {
 
   // Set page tab title & automatically clear all browser-side compiler dependency/build caches upon launch
   useEffect(() => {
-    document.title = "ArchForge System Package Manager";
+    document.title = "ArchWeaver System Package Manager";
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith("archforge-deps-cache-")) {
+        if (key && (key.startsWith("archweaver-deps-cache-") || key.startsWith("archforge-deps-cache-"))) {
           keysToRemove.push(key);
         }
       }
       keysToRemove.forEach(key => localStorage.removeItem(key));
-      console.log(`[ArchForge UI] Automatically cleared ${keysToRemove.length} compiler build caches upon launch.`);
+      console.log(`[ArchWeaver UI] Automatically cleared ${keysToRemove.length} compiler build caches upon launch.`);
     } catch (e) {
       console.error("Failed to automatically clear local compiler caches on launch:", e);
     }
@@ -242,14 +242,14 @@ export default function App() {
     const targetBg = activeTheme === "light" ? activePreset.lightBg : activePreset.darkBg;
     root.style.setProperty("--bg-app", targetBg);
 
-    localStorage.setItem("archforge-theme", theme);
-    localStorage.setItem("archforge-theme-option", themeOption);
+    localStorage.setItem("archweaver-theme", theme);
+    localStorage.setItem("archweaver-theme-option", themeOption);
   }, [theme, resolvedSystemTheme, themeOption]);
 
   // Sync custom accent color shades dynamically
   useEffect(() => {
     const root = document.documentElement;
-    localStorage.setItem("archforge-accent", accentColor);
+    localStorage.setItem("archweaver-accent", accentColor);
     
     // Hex parsing safely and elegantly
     const cleanHex = accentColor.startsWith("#") ? accentColor : `#${accentColor}`;
@@ -449,7 +449,7 @@ export default function App() {
   // Action: Execute actual uninstall
   const executeUninstall = async (name: string) => {
     try {
-      const pw = sessionStorage.getItem("archforge-sudopw") || "";
+      const pw = sessionStorage.getItem("archweaver-sudopw") || sessionStorage.getItem("archforge-sudopw") || "";
       const res = await fetch("/api/packages/uninstall", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -532,11 +532,11 @@ export default function App() {
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-5">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-950/80 border border-white/10 shadow-lg shadow-cyan-500/10 backdrop-blur-md">
-            <ArchForgeLogo size={28} />
+            <ArchWeaverLogo size={28} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black tracking-tight font-mono text-white">ARCHFORGE</h1>
+              <h1 className="text-xl font-black tracking-tight font-mono text-white">ARCHWEAVER</h1>
               <span className="rounded bg-cyan-950/50 border border-cyan-800/40 font-semibold px-2 py-0.5 text-[10px] text-cyan-400 font-mono tracking-wider">
                 AUR ENGINE
               </span>
@@ -787,7 +787,7 @@ export default function App() {
             <div>
               <h4 className="font-semibold text-rose-300">Missing Core Packaging Tools!</h4>
               <p className="text-xs text-slate-400 mt-1">
-                ArchForge detected that your Arch Linux host environment is missing essential build tools required to compile AUR packages: <span className="font-mono text-rose-300">{stats.missingTools.join(", ")}</span>.
+                ArchWeaver detected that your Arch Linux host environment is missing essential build tools required to compile AUR packages: <span className="font-mono text-rose-300">{stats.missingTools.join(", ")}</span>.
               </p>
             </div>
           </div>
@@ -1212,7 +1212,7 @@ export default function App() {
       {/* Aesthetic system credit block inside page margins */}
       <footer className="mt-12 border-t border-white/5 pt-5 flex flex-col md:flex-row items-center justify-between text-[11px] text-zinc-500 font-mono">
         <div>
-          <span>ArchForge GUI Package Management Console</span>
+          <span>ArchWeaver GUI Package Management Console</span>
           <span className="mx-2">•</span>
           <span>Released under GPLv3</span>
         </div>

@@ -4,7 +4,7 @@ set -e
 # Directories
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${PROJECT_DIR}/build-appimage"
-APPDIR="${BUILD_DIR}/ArchForge.AppDir"
+APPDIR="${BUILD_DIR}/ArchWeaver.AppDir"
 
 # 0. Verify Build System Environment Dependencies
 echo "==> Verifying core AppImage builder toolchain..."
@@ -29,7 +29,7 @@ echo "==> Heading to project root: ${PROJECT_DIR}"
 cd "${PROJECT_DIR}"
 
 # 1. Build the production React and Node distribution
-echo "==> Initiating standard clean-build for ArchForge..."
+echo "==> Initiating standard clean-build for ArchWeaver..."
 npm run clean || true
 npm run build
 
@@ -50,23 +50,23 @@ chmod +x "${APPDIR}/AppRun"
 
 # 4. Create Desktop Entry
 echo "==> Creating Desktop launcher description..."
-cat << 'EOF' > "${APPDIR}/archforge.desktop"
+cat << 'EOF' > "${APPDIR}/archweaver.desktop"
 [Desktop Entry]
 Type=Application
-Name=ArchForge Manager
+Name=ArchWeaver Manager
 Exec=AppRun --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
-Icon=archforge
+Icon=archweaver
 Comment=Bare-metal Arch Linux package and AUR repository manager
 Categories=System;Utility;Settings;PackageManager;
 Terminal=false
-StartupWMClass=ArchForge
+StartupWMClass=ArchWeaver
 EOF
 
 # 5. Fetch/Create Sleek AppIcon
-echo "==> Fetching sleek packaging icon for ArchForge..."
-curl -s -L -o "${APPDIR}/archforge.png" "https://cdn-icons-png.flaticon.com/512/9356/9356230.png" || {
+echo "==> Fetching sleek packaging icon for ArchWeaver..."
+curl -s -L -o "${APPDIR}/archweaver.png" "https://cdn-icons-png.flaticon.com/512/9356/9356230.png" || {
   echo "⚠️ Failed downloading icon from backup Flaticon CDN; generating a fallback visual placeholder instead..."
-  touch "${APPDIR}/archforge.png"
+  touch "${APPDIR}/archweaver.png"
 }
 
 # 6. Fetch/Unpack Electron Standalone GUI Engine
@@ -93,7 +93,7 @@ echo "==> Bundling full-stack production build assets into payload..."
 cp -r dist "${APPDIR}/resources/app/"
 cp package.json "${APPDIR}/resources/app/"
 cp server.py "${APPDIR}/resources/app/"
-cp "${APPDIR}/archforge.png" "${APPDIR}/resources/app/"
+cp "${APPDIR}/archweaver.png" "${APPDIR}/resources/app/"
 
 echo "==> Generating standalone Electron Orchestrator and API pipeline..."
 cat << 'EOF' > "${APPDIR}/resources/app/main.cjs"
@@ -113,11 +113,11 @@ function performDesktopIntegration() {
   const currentBinary = process.env.APPIMAGE || process.execPath;
   const homeDir = os.homedir();
   const binDir = path.join(homeDir, '.local', 'bin');
-  const targetAppPath = path.join(binDir, 'archforge');
+  const targetAppPath = path.join(binDir, 'archweaver');
   const applicationsDir = path.join(homeDir, '.local', 'share', 'applications');
-  const desktopFilePath = path.join(applicationsDir, 'archforge.desktop');
+  const desktopFilePath = path.join(applicationsDir, 'archweaver.desktop');
   const iconDir = path.join(homeDir, '.local', 'share', 'icons');
-  const iconPath = path.join(iconDir, 'archforge.png');
+  const iconPath = path.join(iconDir, 'archweaver.png');
 
   try {
     fs.mkdirSync(binDir, { recursive: true });
@@ -126,20 +126,20 @@ function performDesktopIntegration() {
 
     // Copy our AppImage executable to the standard consumer binary directory
     if (isAppImage && currentBinary !== targetAppPath) {
-      console.log(`[ArchForge Self-Installer] Propagating binary to ${targetAppPath}...`);
+      console.log(`[ArchWeaver Self-Installer] Propagating binary to ${targetAppPath}...`);
       fs.copyFileSync(currentBinary, targetAppPath);
       fs.chmodSync(targetAppPath, 0o755);
     }
 
     // Try copying or writing our core launcher icon
-    const embeddedIcon = path.join(__dirname, 'archforge.png');
+    const embeddedIcon = path.join(__dirname, 'archweaver.png');
     if (fs.existsSync(embeddedIcon)) {
       fs.copyFileSync(embeddedIcon, iconPath);
       const iconPathsToPopulate = [
-        path.join(homeDir, ".icons", "archforge.png"),
-        path.join(homeDir, ".local/share/icons/hicolor/48x48/apps/archforge.png"),
-        path.join(homeDir, ".local/share/icons/hicolor/256x256/apps/archforge.png"),
-        path.join(homeDir, ".local/share/icons/hicolor/512x512/apps/archforge.png"),
+        path.join(homeDir, ".icons", "archweaver.png"),
+        path.join(homeDir, ".local/share/icons/hicolor/48x48/apps/archweaver.png"),
+        path.join(homeDir, ".local/share/icons/hicolor/256x256/apps/archweaver.png"),
+        path.join(homeDir, ".local/share/icons/hicolor/512x512/apps/archweaver.png"),
       ];
       for (const p of iconPathsToPopulate) {
         try {
@@ -156,13 +156,13 @@ function performDesktopIntegration() {
     const execCmd = isAppImage ? targetAppPath : currentBinary;
     const desktopTemplate = `[Desktop Entry]
 Type=Application
-Name=ArchForge Manager
+Name=ArchWeaver Manager
 Exec=${execCmd} --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer --no-sandbox %U
 Icon=${iconPath}
 Comment=Bare-metal Arch Linux package and AUR repository manager
 Categories=System;Utility;Settings;PackageManager;
 Terminal=false
-StartupWMClass=ArchForge
+StartupWMClass=ArchWeaver
 `;
 
     fs.writeFileSync(desktopFilePath, desktopTemplate, 'utf8');
@@ -171,9 +171,9 @@ StartupWMClass=ArchForge
     try {
       execSync(`update-desktop-database ${applicationsDir}`, { stdio: 'ignore' });
     } catch {}
-    console.log('[ArchForge Self-Installer] Native desktop configuration established successfully!');
+    console.log('[ArchWeaver Self-Installer] Native desktop configuration established successfully!');
   } catch (err) {
-    console.error('[ArchForge Self-Installer] Integration failed:', err);
+    console.error('[ArchWeaver Self-Installer] Integration failed:', err);
   }
 }
 
@@ -207,7 +207,7 @@ let splashWindow = null;
 const SPLASH_HTML = `
 <html>
   <head>
-    <title>ArchForge</title>
+    <title>ArchWeaver</title>
     <style>
       body {
         background-color: #0c0a09;
@@ -293,7 +293,7 @@ const SPLASH_HTML = `
       <div class="pulse-ring"></div>
       <div class="spinner"></div>
     </div>
-    <h2>ARCHFORGE MANAGER</h2>
+    <h2>ARCHWEAVER MANAGER</h2>
     <div id="status" class="desc">Booting secure core engine...</div>
     <div class="progress-dots">
       <div class="dot"></div>
@@ -330,8 +330,8 @@ function createMainWindow(port) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: "ArchForge Manager",
-    icon: path.join(__dirname, 'archforge.png'),
+    title: "ArchWeaver Manager",
+    icon: path.join(__dirname, 'archweaver.png'),
     show: false,
     backgroundColor: '#0c0a09',
     webPreferences: {
@@ -369,7 +369,7 @@ function pollLocalExpressServer(callback) {
   const maxAttempts = 100;
   const check = () => {
     attempts++;
-    const port = global.archforgePort || 3000;
+    const port = global.archweaverPort || 3000;
     const req = http.get(`http://localhost:${port}/api/system/stats`, (res) => {
       callback(true, port);
     });
@@ -400,7 +400,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow(global.archforgePort || 3000);
+      createMainWindow(global.archweaverPort || 3000);
     }
   });
 });
@@ -438,21 +438,21 @@ cd "${PROJECT_DIR}"
 
 if [ -f "${BUILD_DIR}/squashfs-root/AppRun" ]; then
   echo "==> Running extracted appimagetool binary directly..."
-  if ! "${BUILD_DIR}/squashfs-root/AppRun" "${APPDIR}" "${PROJECT_DIR}/ArchForge-x86_64.AppImage"; then
+  if ! "${BUILD_DIR}/squashfs-root/AppRun" "${APPDIR}" "${PROJECT_DIR}/ArchWeaver-x86_64.AppImage"; then
     echo "❌ ERROR: AppImage packaging via extracted builder failed."
     exit 1
   fi
 else
   echo "==> Fallback to extracting-and-running appimagetool directly..."
-  if ! "${BUILD_DIR}/appimagetool" --appimage-extract-and-run "${APPDIR}" "${PROJECT_DIR}/ArchForge-x86_64.AppImage"; then
+  if ! "${BUILD_DIR}/appimagetool" --appimage-extract-and-run "${APPDIR}" "${PROJECT_DIR}/ArchWeaver-x86_64.AppImage"; then
     echo "❌ ERROR: AppImage packaging execution failed."
     exit 1
   fi
 fi
 
 # Verify the output AppImage file exists
-if [ ! -f "${PROJECT_DIR}/ArchForge-x86_64.AppImage" ]; then
-  echo "❌ ERROR: Compilation finished but the output file ${PROJECT_DIR}/ArchForge-x86_64.AppImage was not found!"
+if [ ! -f "${PROJECT_DIR}/ArchWeaver-x86_64.AppImage" ]; then
+  echo "❌ ERROR: Compilation finished but the output file ${PROJECT_DIR}/ArchWeaver-x86_64.AppImage was not found!"
   exit 1
 fi
 
@@ -462,5 +462,5 @@ rm -rf "${BUILD_DIR}"
 echo "=========================================================="
 echo "🎉 SUCCESS: Sandboxed build sequence finished!"
 echo "🚀 Standalone AppImage Compiled!"
-echo "📍 Find it at: ${PROJECT_DIR}/ArchForge-x86_64.AppImage"
+echo "📍 Find it at: ${PROJECT_DIR}/ArchWeaver-x86_64.AppImage"
 echo "=========================================================="

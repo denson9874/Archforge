@@ -1,6 +1,6 @@
 {
-  "name": "ArchForge",
-  "short_name": "ArchForge",
+  "name": "ArchWeaver",
+  "short_name": "ArchWeaver",
   "description": "Native Arch Linux package manager.",
   "start_url": "/",
   "display": "standalone",
@@ -13,7 +13,7 @@
       "type": "image/png"
     },
     {
-      "src": "/archforge-logo-512.png",
+      "src": "/archweaver-logo-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

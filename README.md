@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="public/archforge_logo.svg" alt="ArchForge Logo" width="160" height="160" />
-  <h1>ArchForge</h1>
+  <img src="public/archweaver_logo.svg" alt="ArchWeaver Logo" width="160" height="160" />
+  <h1>ArchWeaver</h1>
   <p><strong>Your One-Stop Shop for AUR and Arch Linux Package Management</strong></p>
 </div>
 
-ArchForge is an interactive, full-stack visual management console and live build simulator for the Arch Linux AUR and system-wide package repositories.
+ArchWeaver is an interactive, full-stack visual management console and live build simulator for the Arch Linux AUR and system-wide package repositories.
 The application operates as a highly responsive dashboard powered by an Express/Node static server proxying a custom Python background REST API, enabling real-time secure communication with the standard Arch Linux AUR RPC API.
 
 🌟 Key Features & Architecture
@@ -21,7 +21,7 @@ The application operates as a highly responsive dashboard powered by an Express/
 
 ## 🚀 Running via Standalone AppImage
 
-The easiest way to run stable **ArchForge** as a client on any modern Linux environment without pre-installing runtime servers is to compile or execute the native, self-contained **AppImage**.
+The easiest way to run stable **ArchWeaver** as a client on any modern Linux environment without pre-installing runtime servers is to compile or execute the native, self-contained **AppImage**.
 
 ### 1. Build the Desktop AppImage
 
@@ -39,28 +39,28 @@ This automates the following steps:
 1. Compiles the modern React assets in production mode.
 2. Bundles the custom background Python server.
 3. Retrieves and sets up a stable, isolated Electron GUI wrapper.
-4. Generates a standalone, double-clickable `ArchForge-x86_64.AppImage` executable.
+4. Generates a standalone, double-clickable `ArchWeaver-x86_64.AppImage` executable.
 
 ### 2. Execute the AppImage
 
-After compiling, the file `ArchForge-x86_64.AppImage` will appear in the directory root. To execute:
+After compiling, the file `ArchWeaver-x86_64.AppImage` will appear in the directory root. To execute:
 
 ```bash
 # Grant execution rights to the AppImage
-chmod +x ArchForge-x86_64.AppImage
+chmod +x ArchWeaver-x86_64.AppImage
 
 # Launch the standalone desktop application
-./ArchForge-x86_64.AppImage
+./ArchWeaver-x86_64.AppImage
 ```
 
 > 💡 **Auto Desktop Shortcut/Menu Integration:**
-> On its very first run, the AppImage automatically integrates itself into your host's local system directories (`~/.local/bin` and `~/.local/share/applications/`), adding a fully styled launcher icon to your system menus so you can boot ArchForge directly from your application dashboard at any time.
+> On its very first run, the AppImage automatically integrates itself into your host's local system directories (`~/.local/bin` and `~/.local/share/applications/`), adding a fully styled launcher icon to your system menus so you can boot ArchWeaver directly from your application dashboard at any time.
 
 ---
 
 ## 🛠️ Developer Local Manual Setup (Bare-Metal Mod Mode)
 
-If you are developing or editing ArchForge itself, you can run the UI dev-server and API backend side-by-side using Node:
+If you are developing or editing ArchWeaver itself, you can run the UI dev-server and API backend side-by-side using Node:
 
 ### 1. Install Dependencies
 ```bash
@@ -74,9 +74,6 @@ Run the bare-metal development pipeline with direct Arch/AUR mock services:
 ```bash
 # Start Vite development server
 npm run dev
-
-# Or boot directly in Desktop Client mode
-npm run desktop
 ```
 
 ⚠️ **Sudo Permission Notice:**
@@ -90,12 +87,12 @@ You can also package and run the application inside a multi-stage Alpine-based D
 
 ### 1. Build the Docker Image:
 ```bash
-docker build -t archforge .
+docker build -t archweaver .
 ```
 
 ### 2. Run the Containerized Application:
 ```bash
-docker run -p 3000:3000 archforge
+docker run -p 3000:3000 archweaver
 ```
 
 Once started, the application will be accessible inside your browser at `http://localhost:3000`.
