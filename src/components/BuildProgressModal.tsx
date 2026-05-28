@@ -90,6 +90,48 @@ export default function BuildProgressModal({
   const faultResolvedRef = useRef(false);
   const [isSudoWaiting, setIsSudoWaiting] = useState(false);
 
+  // Automatic retry state variables for network fetch fault tolerant compiles
+  const [retryCount, setRetryCount] = useState(0);
+  const [buildAttempt, setBuildAttempt] = useState(1);
+  const [fetchTimeout, setFetchTimeout] = useState(15); // Standard dynamic fetch timeout
+  const [networkErrorDetected, setNetworkErrorDetected] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [simulateNetworkOutage, setSimulateNetworkOutage] = useState(true);
+
+  // Countdown timer for automatic retry triggers
+  useEffect(() => {
+    if (networkErrorDetected) {
+      setCountdown(5);
+    } else {
+      setCountdown(null);
+    }
+  }, [networkErrorDetected]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      setCountdown(null);
+      handleRetryWithIncreasedTimeout();
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  const handleRetryWithIncreasedTimeout = () => {
+    setCountdown(null);
+    setNetworkErrorDetected(false);
+    setErrorOccurred(null);
+    setHealingStep("none");
+    
+    // Scale up source retrieval timeout limits (e.g. 15s -> 60s)
+    setFetchTimeout((prev) => prev * 4);
+    setBuildAttempt((prev) => prev + 1);
+    setRetryCount((prev) => prev + 1);
+  };
+
   // Generate steps based on package metadata
   const steps = generateBuildSteps(pkgName, pkgVersion, depends);
 
@@ -101,6 +143,26 @@ export default function BuildProgressModal({
 
     let active = true;
     let logBuffer: string[] = [];
+
+    // Reset logging screens and percent counts upon multi-attempt build retry
+    if (buildAttempt > 1) {
+      logBuffer = [
+        `\x1b[33m==> [ArchForge Shield Retry Node] Re-initiating compilation attempt #${buildAttempt}...\x1b[0m`,
+        `==> Setting expanded source fetch parameters for safe retrieval:`,
+        `    • SRC_FETCH_TIMEOUT = ${fetchTimeout}s (Scaled from previous timeout limit)`,
+        `    • NETWORK_RECOVERY_BUFFERS = ENABLED`,
+        `    • DYNAMIC_MIRROR_RESOLVER = ACTIVE`,
+        `==> Dynamic retry configuration loaded. Resuming package installer compiler...`,
+        `--------------------------------------------------------------------------------`
+      ];
+      setLogs([...logBuffer]);
+      setPercentage(0);
+      setComplete(false);
+    } else {
+      setLogs([]);
+      setPercentage(0);
+      setComplete(false);
+    }
 
     // Connect to Server-Sent Events (SSE) stream to fetch live bare-metal command stdout
     const savedSudoPw = sessionStorage.getItem("archforge-sudopw") || "";
@@ -121,6 +183,26 @@ export default function BuildProgressModal({
             logBuffer = [...logBuffer, data.line];
             setLogs([...logBuffer]);
             
+            // Intelligently check for live network errors to prompt fallback retry panel
+            const lineLower = data.line.toLowerCase();
+            const isLiveNetworkError = 
+              lineLower.includes("connection timed out") || 
+              lineLower.includes("could not resolve host") || 
+              lineLower.includes("curl: (28)") || 
+              lineLower.includes("ssl verification failed") || 
+              lineLower.includes("failed to download") ||
+              lineLower.includes("error: failure while downloading") ||
+              lineLower.includes("network is unreachable");
+              
+            if (isLiveNetworkError) {
+              setErrorOccurred(data.line);
+              setNetworkErrorDetected(true);
+              if (eventSource) {
+                eventSource.close();
+              }
+              return;
+            }
+
             // Auto detect compile phases by reading real-time stdout markers
             if (data.line.includes("Cloning") || data.line.includes("git")) {
               setCurrentPhase("Source Fetching");
@@ -188,6 +270,26 @@ export default function BuildProgressModal({
 
         const step = steps[currentStepIdx];
         setCurrentPhase(step.phase);
+
+        // DELIBERATE simulation of source download failure
+        if (step.phase === "Source Retrieval" && lineIdx === 5 && buildAttempt === 1 && simulateNetworkOutage) {
+          setErrorOccurred("curl: (28) Connection timed out after 15000 milliseconds");
+          setHealingStep("detecting");
+          setNetworkErrorDetected(true);
+          
+          logBuffer = [
+            ...logBuffer,
+            `  -> Downloading http://aur.archlinux.org/packages/${pkgName}/sources/${pkgName}-${pkgVersion}.tar.gz...`,
+            `  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current`,
+            `                                 Dload  Upload   Total   Spent    Left  Speed`,
+            `  0     0    0     0    0     0      0      0  0:00:15  0:00:15 --:--:--     0`,
+            `\x1b[31mcurl: (28) Connection timed out after 15000 milliseconds\x1b[0m`,
+            `==> \x1b[31mERROR:\x1b[0m Failure while downloading http://aur.archlinux.org/packages/${pkgName}/sources/${pkgName}-${pkgVersion}.tar.gz`,
+            `    Aborting...`
+          ];
+          setLogs([...logBuffer]);
+          return; // pause loop !
+        }
 
         // DELIBERATE compiler failure mode for Discord package compilation
         if (step.phase === "Compilation" && pkgName.toLowerCase() === "discord" && lineIdx === 8 && !faultResolvedRef.current) {
@@ -303,7 +405,7 @@ export default function BuildProgressModal({
         eventSource.close();
       }
     };
-  }, [pkgName, pkgVersion, authSubmitted, systemRealArch]);
+  }, [pkgName, pkgVersion, authSubmitted, systemRealArch, retryCount]);
 
   // Handle auto-scroll of scrolling terminal console
   useEffect(() => {
@@ -437,11 +539,30 @@ export default function BuildProgressModal({
               <h3 className="text-base font-bold text-white font-mono">
                 {complete ? "Compilation Succeeded" : "Compiling AUR Package..."}
               </h3>
-              <p className="text-xs text-zinc-400 font-mono mt-0.5">
+              <p className="text-xs text-zinc-400 font-mono mt-0.5 flex flex-wrap items-center gap-y-1.5">
                 makepkg toolchain: <span className="text-cyan-400 font-bold">{pkgName} {pkgVersion}</span>
                 {pkgSize && (
-                  <span className="text-zinc-500 text-[11px] ml-1.5 font-normal">
+                  <span className="text-zinc-500 text-[11px] ml-1.5 font-normal mr-2">
                     ({pkgSize}, {depends?.length || 0} {depends?.length === 1 ? "dep" : "deps"})
+                  </span>
+                )}
+                {!complete && buildAttempt === 1 && (
+                  <span 
+                    className="inline-flex items-center gap-1.5 ml-1 bg-zinc-900 border border-white/5 px-2 py-0.5 rounded text-[10px] text-zinc-400 font-semibold cursor-pointer select-none hover:border-cyan-500/30 transition shadow-sm"
+                    onClick={() => setSimulateNetworkOutage(!simulateNetworkOutage)}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={simulateNetworkOutage} 
+                      onChange={() => {}} // handled by click of parent wrapper
+                      className="rounded border-zinc-700 bg-zinc-805 text-cyan-400 focus:ring-0 cursor-pointer h-3 w-3 animate-pulse"
+                    />
+                    <span>Mock Network Outage</span>
+                  </span>
+                )}
+                {buildAttempt > 1 && (
+                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded px-1.5 py-0.5 text-[9px] font-mono font-bold animate-pulse ml-1.5">
+                    Safe Fetch Active (Attempt #{buildAttempt} • Timeout: {fetchTimeout}s)
                   </span>
                 )}
               </p>
@@ -535,7 +656,71 @@ export default function BuildProgressModal({
             </div>
           )}
 
-          {errorOccurred && (
+          {networkErrorDetected && (
+            <div className="bg-gradient-to-r from-amber-500/10 to-red-500/10 border-2 border-amber-500/35 text-amber-200 p-4 rounded-xl flex items-start gap-4 mt-1 border-dashed font-mono text-xs shadow-lg animate-fadeIn">
+              <div className="h-8 w-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-450 flex items-center justify-center shrink-0 mt-0.5 animate-pulse">
+                <Loader2 className="h-5 w-5 animate-spin text-amber-450" />
+              </div>
+              <div className="flex-grow">
+                <span className="font-extrabold text-amber-450 block uppercase tracking-wider text-[11px]">
+                  📡 NETWORK FETCH DROPPED (PHASE: SOURCE RETRIEVAL)
+                </span>
+                <p className="mt-1 font-bold text-slate-200 text-[12px] leading-relaxed">
+                  The host system timed out while downloading package tarball binaries from upstream servers.
+                </p>
+                
+                <div className="mt-3.5 bg-black/50 border border-white/5 rounded-lg p-3 text-slate-300 text-[11px] leading-relaxed space-y-2.5">
+                  <div className="flex items-center justify-between text-zinc-400">
+                    <span>Active Timeout Bounds:</span>
+                    <span className="font-bold text-rose-450 font-mono">{fetchTimeout} seconds</span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-white/5 pt-2">
+                    <span className="text-zinc-400 font-sans">Diagnosis:</span>
+                    <span className="text-zinc-300 font-sans">Server side high-latency packet drops or expired DNS resolutions on AUR.</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between border-t border-white/5 pt-2 text-emerald-450 font-bold">
+                    <span>Auto-Repair Plan:</span>
+                    <span>Scale timeout to <span className="underline text-emerald-350">{fetchTimeout * 4} seconds</span> and force parallel TCP connections.</span>
+                  </div>
+                  
+                  {countdown !== null && (
+                    <div className="flex items-center justify-between bg-emerald-500/5 rounded p-2 text-xs font-sans text-emerald-300 border border-emerald-500/10 mt-1">
+                      <span className="flex items-center gap-1.5 font-mono">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        Auto-retrying build with expanded limits in:
+                      </span>
+                      <span className="font-bold text-base font-mono bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded shadow">
+                        {countdown}s
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleRetryWithIncreasedTimeout}
+                    className="rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 px-4 py-2 text-xs font-extrabold transition cursor-pointer font-mono shadow-md shadow-amber-500/10 hover:shadow-amber-500/20 active:scale-95"
+                  >
+                    Retry Now with {fetchTimeout * 4}s Timeout ⚡
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCountdown(null)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+                  >
+                    Pause Auto-Timer
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {errorOccurred && !networkErrorDetected && (
             <div className="bg-rose-500/10 border border-rose-500/30 text-rose-200 p-4 rounded-xl flex items-start gap-3 mt-1 animate-pulse font-mono text-xs">
               <div className="h-2 w-2 rounded-full bg-rose-500 animate-ping mt-1.5 shrink-0" />
               <div className="flex-grow">

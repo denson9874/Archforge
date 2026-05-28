@@ -559,6 +559,13 @@ export default function BatchBuildProgressModal({
   const currentPkgRemainingSeconds = Math.max(0, currentPkgEstSeconds - activePkgElapsedSeconds);
   const currentPkgRemainingTimeStr = formatEstimatedTime(currentPkgRemainingSeconds);
 
+  const totalOriginalBatchTimeSec = packages.reduce((acc, pkg) => {
+    const pName = pkg.Name || pkg.name;
+    const pSize = pkg.size || pkg.Size || "45.0 MB";
+    const pDeps = pkg.Depends || pkg.depends || [];
+    return acc + estimateBuildTimeSeconds(pName, pSize, pDeps.length);
+  }, 0);
+
   let totalRemainingEstSeconds = 0;
   packages.forEach((pkg, idx) => {
     if (statuses[idx] === "queued" || statuses[idx] === "compiling") {
@@ -574,6 +581,10 @@ export default function BatchBuildProgressModal({
     }
   });
   const totalRemainingEstTimeStr = formatEstimatedTime(totalRemainingEstSeconds);
+  const totalElapsedBatchTimeSec = Math.max(0, totalOriginalBatchTimeSec - totalRemainingEstSeconds);
+  const timeProgressPct = totalOriginalBatchTimeSec > 0
+    ? Math.min(100, Math.round((totalElapsedBatchTimeSec / totalOriginalBatchTimeSec) * 100))
+    : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md select-none animate-fadeIn overflow-y-auto">
@@ -721,9 +732,45 @@ export default function BatchBuildProgressModal({
                 })}
               </div>
               
-              <div className="mt-auto pt-2 border-t border-white/5 text-[10px] text-zinc-500 font-mono">
-                <span className="block">• Sequential makepkg pipeline</span>
-                <span className="block">• Real-time output feedback</span>
+              <div className="mt-4 pt-3 border-t border-white/5 space-y-2.5 font-mono">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block">
+                  Batch Queue Metrics
+                </span>
+                
+                <div className="rounded-lg bg-zinc-900/50 border border-white/5 p-2.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-zinc-500 font-medium">Initial Est:</span>
+                    <span className="text-zinc-300 font-mono">{formatEstimatedTime(totalOriginalBatchTimeSec)}</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-zinc-500 font-medium">Elapsed So Far:</span>
+                    <span className="text-zinc-300 font-mono">{formatEstimatedTime(totalElapsedBatchTimeSec)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-white/5 pt-1.5">
+                    <span className="text-amber-400 font-bold">Total Remaining:</span>
+                    <span className="text-amber-400 font-bold font-mono animate-pulse">{totalRemainingEstTimeStr}</span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                      <span>Time Processed</span>
+                      <span className="font-semibold text-zinc-400">{timeProgressPct}%</span>
+                    </div>
+                    <div className="h-1 w-full bg-zinc-950/60 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-amber-500 transition-all duration-300"
+                        style={{ width: `${timeProgressPct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-1 text-[9px] text-zinc-500 space-y-0.5">
+                  <span className="block">• Sequential makepkg compilation</span>
+                  <span className="block">• Dynamic time remaining update loop</span>
+                </div>
               </div>
             </div>
 

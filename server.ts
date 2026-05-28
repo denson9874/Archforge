@@ -696,7 +696,49 @@ async function findPackage(name: string): Promise<InstalledPackage | undefined> 
   return list.find(p => p.name.toLowerCase() === name.toLowerCase());
 }
 
+// Auto-clear AUR (UR) and build caches upon launch
+function clearAurAndBuildCacheOnStartup() {
+  try {
+    console.log("==> [ArchForge Compiler Setup] Auto-clearing all AUR and build caches upon launch...");
+    
+    // Clear in-memory simulated AUR cache files list
+    simulatedAurCacheFiles = [];
+    simulatedSystemCacheSize = "0 B";
+    
+    // Clear real physical AUR cache directories if using bare-metal Arch
+    const aurCachePath = path.join(os.homedir(), ".cache/yay");
+    if (fs.existsSync(aurCachePath)) {
+      try {
+        fs.rmSync(aurCachePath, { recursive: true, force: true });
+        fs.mkdirSync(aurCachePath, { recursive: true });
+        console.log(`==> [ArchForge Compiler Setup] Successfully cleared physical AUR and build cache directory: ${aurCachePath}`);
+      } catch (e: any) {
+        console.warn(`[ArchForge Compiler Setup] Direct physical cleanup skipped for ${aurCachePath} (Reason: ${e.message})`);
+      }
+    } else {
+      console.log(`==> [ArchForge Compiler Setup] Physical AUR build cache directory (~/.cache/yay) is already clean or uninitialized.`);
+    }
+
+    // Clear any extra source cache dirs
+    const sourcesCachePath = "/var/cache/sources";
+    try {
+      if (fs.existsSync(sourcesCachePath)) {
+        fs.rmSync(sourcesCachePath, { recursive: true, force: true });
+        fs.mkdirSync(sourcesCachePath, { recursive: true });
+        console.log(`==> [ArchForge Compiler Setup] Successfully cleared external sources compiler cache: ${sourcesCachePath}`);
+      }
+    } catch (e: any) {
+      console.warn(`[ArchForge Compiler Setup] Direct physical cleanup skipped for /var/cache/sources (Reason: ${e.message})`);
+    }
+  } catch (err: any) {
+    console.error("Failed to clear AUR and build cache on launch:", err);
+  }
+}
+
 async function startServer() {
+  // Automatically clear all AUR and build caches upon backend compiler launch
+  clearAurAndBuildCacheOnStartup();
+
   const app = express();
   let PORT = parseInt(process.env.PORT || "3000", 10);
 

@@ -187,9 +187,22 @@ export default function App() {
     }
   };
 
-  // Set page tab title
+  // Set page tab title & automatically clear all browser-side compiler dependency/build caches upon launch
   useEffect(() => {
     document.title = "ArchForge System Package Manager";
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("archforge-deps-cache-")) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      console.log(`[ArchForge UI] Automatically cleared ${keysToRemove.length} compiler build caches upon launch.`);
+    } catch (e) {
+      console.error("Failed to automatically clear local compiler caches on launch:", e);
+    }
   }, []);
 
   // Poll GTK/system theme
