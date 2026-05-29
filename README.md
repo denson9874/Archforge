@@ -5,7 +5,7 @@
 </div>
 
 ArchWeaver is an interactive, full-stack visual management console and live build simulator for the Arch Linux AUR and system-wide package repositories.
-The application operates as a highly responsive dashboard powered by an Express/Node static server proxying a custom Python background REST API, enabling real-time secure communication with the standard Arch Linux AUR RPC API.
+The application operates as a highly responsive dashboard powered by an Express/Node static server proxying a custom **Rust** background REST API, enabling real-time secure communication with the standard Arch Linux AUR RPC API.
 
 🌟 Key Features & Architecture
 
@@ -60,21 +60,48 @@ chmod +x ArchWeaver-x86_64.AppImage
 
 ## 🛠️ Developer Local Manual Setup (Bare-Metal Mod Mode)
 
-If you are developing or editing ArchWeaver itself, you can run the UI dev-server and API backend side-by-side using Node:
+If you are developing or editing ArchWeaver itself, you can run the UI dev-server and API backend side-by-side using Node and Rust:
 
 ### 1. Install Dependencies
+
+**Node.js & npm packages:**
 ```bash
 # Install NPM packaging modules and packages
 npm install
 ```
 
-### 2. Start the Application
-Run the bare-metal development pipeline with direct Arch/AUR mock services:
+**Rust toolchain (required for backend):**
+```bash
+# Install Rust using rustup (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Then in your shell:
+source $HOME/.cargo/env
+```
+
+### 2. Build Rust Backend
 
 ```bash
-# Start Vite development server
+# Build the Rust backend (debug mode for development)
+cargo build
+
+# Or build the optimized release version
+cargo build --release
+```
+
+### 3. Start the Application
+
+Run the bare-metal development pipeline with Rust backend and direct Arch/AUR mock services:
+
+```bash
+# Terminal 1: Start the Rust backend (if not auto-started)
+./target/debug/archweaver_server
+
+# Terminal 2 (separate terminal): Start Vite development server
 npm run dev
 ```
+
+ℹ️ **Automatic Backend Startup**: When you run `npm run dev`, the Express server will automatically spawn the Rust backend if the binary exists.
 
 ⚠️ **Sudo Permission Notice:**
 When running pacman integrity queries or packages, the under-the-hood Makepkg and helper scripts may request `sudo` permissions. Ensure that you enter your password when requested in the terminal launcher.
@@ -96,3 +123,15 @@ docker run -p 3000:3000 archweaver
 ```
 
 Once started, the application will be accessible inside your browser at `http://localhost:3000`.
+
+## Tauri
+
+You can run the desktop app in development with the Vite dev server using:
+
+  npm run tauri:dev
+
+Build the native bundle with:
+
+  npm run tauri:build
+
+(Requires @tauri-apps/cli installed globally or as a dev dependency.)

@@ -5,6 +5,7 @@ import os from "os";
 import fs from "fs";
 import { promisify } from "util";
 import { GoogleGenAI } from "@google/genai";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 // Get pristine host environment by purging environment variables contaminated by AppImage wrapper
 function getCleanEnv(): NodeJS.ProcessEnv {
@@ -743,6 +744,63 @@ async function startServer() {
   let PORT = parseInt(process.env.PORT || "3000", 10);
 
   app.use(express.json());
+
+  // Proxy to Rust backend for search and package operations
+  const rustBackendUrl = process.env.RUST_BACKEND_URL || "http://localhost:3001";
+  app.use(
+    "/api/search",
+    createProxyMiddleware({
+      target: rustBackendUrl,
+      changeOrigin: true,
+      pathRewrite: {
+        "^/api/search": "/api/search",
+      },
+    })
+  );
+
+  app.use(
+    "/api/package",
+    createProxyMiddleware({
+      target: rustBackendUrl,
+      changeOrigin: true,
+      pathRewrite: {
+        "^/api/package": "/api/package",
+      },
+    })
+  );
+
+  app.use(
+    "/api/build",
+    createProxyMiddleware({
+      target: rustBackendUrl,
+      changeOrigin: true,
+      pathRewrite: {
+        "^/api/build": "/api/build",
+      },
+    })
+  );
+
+  app.use(
+    "/api/system-health",
+    createProxyMiddleware({
+      target: rustBackendUrl,
+      changeOrigin: true,
+      pathRewrite: {
+        "^/api/system-health": "/api/system-health",
+      },
+    })
+  );
+
+  app.use(
+    "/api/suggestions",
+    createProxyMiddleware({
+      target: rustBackendUrl,
+      changeOrigin: true,
+      pathRewrite: {
+        "^/api/suggestions": "/api/suggestions",
+      },
+    })
+  );
 
   // API Routes
   
@@ -2066,6 +2124,34 @@ package() {
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
+  }
+
+  // Start Rust backend if in development mode or if the binary exists
+  const rustBinaryPath = path.join(__dirname, "target/debug/archweaver_server");
+  const rustBinaryPathProd = path.join(__dirname, "target/release/archweaver_server");
+  
+  let rustBackend: any = null;
+  const actualRustPath = fs.existsSync(rustBinaryPathProd) ? rustBinaryPathProd : rustBinaryPath;
+  
+  if (fs.existsSync(actualRustPath)) {
+    console.log(`📦 Spawning Rust backend from: ${actualRustPath}`);
+    rustBackend = spawn(actualRustPath, [], {
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: !isProd,
+    });
+    
+    rustBackend.stdout.on("data", (data: any) => {
+      console.log(`[Rust Backend] ${data.toString().trim()}`);
+    });
+    
+    rustBackend.stderr.on("data", (data: any) => {
+      console.error(`[Rust Backend Error] ${data.toString().trim()}`);
+    });
+    
+    // Wait for Rust backend to start
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  } else {
+    console.warn("⚠️  Rust backend binary not found. API routes will fall back to Node.js implementation.");
   }
 
   // Bind server to port dynamically, automatically trying alternative ports if current port is occupied

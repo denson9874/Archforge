@@ -6,3 +6,28 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Rust/Cargo artifacts
+/target
+/target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
+# Docker
+docker-compose.override.yml

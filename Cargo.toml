@@ -1,0 +1,27 @@
+[package]
+name = "archweaver_server"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "archweaver_server"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4.4"
+actix-rt = "2.9"
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+parking_lot = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+tempfile = "3.8"
+regex = "1.10"
+reqwest = { version = "0.11", features = ["json"] }
+futures = "0.3"
+log = "0.4"
+env_logger = "0.11"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
