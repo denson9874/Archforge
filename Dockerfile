@@ -19,8 +19,8 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 # Copy application source files
 COPY . .
 
-# Run the build command (Vite client build & esbuild server compilation)
-RUN npm run build
+# Build only the web/server assets here; the Tauri desktop build needs host GTK/WebKit deps.
+RUN npm run build:web && npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs
 
 # Stage 3: Runtime image
 FROM node:20-alpine
