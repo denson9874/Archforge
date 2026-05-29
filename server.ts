@@ -5,7 +5,8 @@ import os from "os";
 import fs from "fs";
 import { promisify } from "util";
 import { GoogleGenAI } from "@google/genai";
-import { createProxyMiddleware } from "http-proxy-middleware";
+import { createProxyMiddleware, type Options } from "http-proxy-middleware";
+import { IncomingMessage, ServerResponse } from "http";
 
 // Get pristine host environment by purging environment variables contaminated by AppImage wrapper
 function getCleanEnv(): NodeJS.ProcessEnv {
@@ -766,22 +767,31 @@ async function startServer() {
   app.use(express.json());
 
   const rustBackendUrl = process.env.RUST_BACKEND_URL || "http://localhost:3001";
-  app.use(
-    "/api",
-    createProxyMiddleware({
-      target: rustBackendUrl,
-      changeOrigin: true,
-      pathRewrite: {
-        "^/api": "/api",
-      },
-      onError: (err, req, res) => {
-        console.error("[API Proxy] Rust backend request failed:", err.message);
-        if (!res.headersSent) {
-          res.status(502).json({ error: "Rust backend unavailable. Check server logs." });
+  // Define a local Options type that allows an onError handler with proper http types
+  interface ProxyOptions extends Options<IncomingMessage, ServerResponse> {
+    onError?: (err: any, req: IncomingMessage, res: ServerResponse) => void;
+  }
+
+  const proxyOpts: ProxyOptions = {
+    target: rustBackendUrl,
+    changeOrigin: true,
+    pathRewrite: {
+      "^/api": "/api",
+    },
+    onError: (err, req, res) => {
+      console.error("[API Proxy] Rust backend request failed:", err?.message || err);
+      try {
+        if (res && !res.headersSent) {
+          // Using cast to any to access express-like response helpers when running under express
+          (res as any).status(502).json({ error: "Rust backend unavailable. Check server logs." });
         }
-      },
-    })
-  );
+      } catch (e) {
+        // ignore any errors while attempting to report the proxy failure
+      }
+    },
+  };
+
+  app.use("/api", createProxyMiddleware(proxyOpts));
 
   // API Routes
   
