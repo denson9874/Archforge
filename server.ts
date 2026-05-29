@@ -131,6 +131,26 @@ function truncateAndSanitize(val: any, maxLength: number = 256): string {
   return clean.slice(0, maxLength);
 }
 
+async function waitForRustBackendHealth(backendUrl: string, retries = 20, intervalMs = 300) {
+  const targetUrl = backendUrl.replace(/\/+$/, "") + "/api/health";
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(targetUrl, { method: "GET" });
+      if (res.ok) {
+        return;
+      }
+      const text = await res.text().catch(() => "");
+      console.warn(`[Rust Health] attempt ${attempt} returned ${res.status}: ${text}`);
+    } catch (err: any) {
+      console.warn(`[Rust Health] attempt ${attempt} error: ${err?.message || err}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(`Rust backend did not become healthy at ${targetUrl}`);
+}
+
 // Interfaces
 interface InstalledPackage {
   name: string;
@@ -745,59 +765,20 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Proxy to Rust backend for search and package operations
   const rustBackendUrl = process.env.RUST_BACKEND_URL || "http://localhost:3001";
   app.use(
-    "/api/search",
+    "/api",
     createProxyMiddleware({
       target: rustBackendUrl,
       changeOrigin: true,
       pathRewrite: {
-        "^/api/search": "/api/search",
+        "^/api": "/api",
       },
-    })
-  );
-
-  app.use(
-    "/api/package",
-    createProxyMiddleware({
-      target: rustBackendUrl,
-      changeOrigin: true,
-      pathRewrite: {
-        "^/api/package": "/api/package",
-      },
-    })
-  );
-
-  app.use(
-    "/api/build",
-    createProxyMiddleware({
-      target: rustBackendUrl,
-      changeOrigin: true,
-      pathRewrite: {
-        "^/api/build": "/api/build",
-      },
-    })
-  );
-
-  app.use(
-    "/api/system-health",
-    createProxyMiddleware({
-      target: rustBackendUrl,
-      changeOrigin: true,
-      pathRewrite: {
-        "^/api/system-health": "/api/system-health",
-      },
-    })
-  );
-
-  app.use(
-    "/api/suggestions",
-    createProxyMiddleware({
-      target: rustBackendUrl,
-      changeOrigin: true,
-      pathRewrite: {
-        "^/api/suggestions": "/api/suggestions",
+      onError: (err, req, res) => {
+        console.error("[API Proxy] Rust backend request failed:", err.message);
+        if (!res.headersSent) {
+          res.status(502).json({ error: "Rust backend unavailable. Check server logs." });
+        }
       },
     })
   );
@@ -2127,31 +2108,44 @@ package() {
   }
 
   // Start Rust backend if in development mode or if the binary exists
-  const rustBinaryPath = path.join(__dirname, "target/debug/archweaver_server");
-  const rustBinaryPathProd = path.join(__dirname, "target/release/archweaver_server");
-  
+  const rustBinaryPathCandidates = [
+    process.env.RUST_BACKEND_BIN || "",
+    path.join(__dirname, "archweaver_server"),
+    path.join(__dirname, "target/release/archweaver_server"),
+    path.join(__dirname, "target/debug/archweaver_server"),
+    path.join(__dirname, "..", "archweaver_server"),
+    path.join(__dirname, "..", "target/release/archweaver_server"),
+    path.join(__dirname, "..", "target/debug/archweaver_server"),
+    path.join(__dirname, "..", "..", "target/release/archweaver_server"),
+    path.join(__dirname, "..", "..", "target/debug/archweaver_server"),
+  ].filter(Boolean as any);
+  const actualRustPath = rustBinaryPathCandidates.find((candidate) => fs.existsSync(candidate));
+
   let rustBackend: any = null;
-  const actualRustPath = fs.existsSync(rustBinaryPathProd) ? rustBinaryPathProd : rustBinaryPath;
-  
-  if (fs.existsSync(actualRustPath)) {
+  if (actualRustPath) {
     console.log(`📦 Spawning Rust backend from: ${actualRustPath}`);
     rustBackend = spawn(actualRustPath, [], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: !isProd,
     });
-    
+
     rustBackend.stdout.on("data", (data: any) => {
       console.log(`[Rust Backend] ${data.toString().trim()}`);
     });
-    
+
     rustBackend.stderr.on("data", (data: any) => {
       console.error(`[Rust Backend Error] ${data.toString().trim()}`);
     });
-    
-    // Wait for Rust backend to start
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    try {
+      await waitForRustBackendHealth(rustBackendUrl, 30, 300);
+      console.log(`✅ Rust backend is healthy at ${rustBackendUrl}`);
+    } catch (err: any) {
+      console.error("🔥 Rust backend startup failed:", err.message || err);
+      process.exit(1);
+    }
   } else {
-    console.warn("⚠️  Rust backend binary not found. API routes will fall back to Node.js implementation.");
+    console.warn("⚠️ Rust backend binary not found. API routes will fall back to Node.js implementation.");
   }
 
   // Bind server to port dynamically, automatically trying alternative ports if current port is occupied

@@ -33,6 +33,10 @@ echo "==> Initiating standard clean-build for ArchWeaver..."
 npm run clean || true
 npm run build
 
+# 1.1 Build the Rust backend release binary for packaging
+echo "==> Building Rust backend release binary..."
+cargo build --release
+
 # 2. Re-create workspace directories
 echo "==> Rebuilding packaging workspace..."
 rm -rf "${BUILD_DIR}"
@@ -92,7 +96,11 @@ rm -f "${APPDIR}/resources/default_app.asar"
 echo "==> Bundling full-stack production build assets into payload..."
 cp -r dist "${APPDIR}/resources/app/"
 cp package.json "${APPDIR}/resources/app/"
-cp server.py "${APPDIR}/resources/app/"
+if [ -f "${PROJECT_DIR}/target/release/archweaver_server" ]; then
+  cp "${PROJECT_DIR}/target/release/archweaver_server" "${APPDIR}/resources/app/"
+elif [ -f "${PROJECT_DIR}/target/debug/archweaver_server" ]; then
+  cp "${PROJECT_DIR}/target/debug/archweaver_server" "${APPDIR}/resources/app/"
+fi
 cp "${APPDIR}/archweaver.png" "${APPDIR}/resources/app/"
 
 echo "==> Generating standalone Electron Orchestrator and API pipeline..."
@@ -177,27 +185,27 @@ StartupWMClass=ArchWeaver
   }
 }
 
-// 3. Launch embedded Python REST and static file server asynchronously
+// 3. Launch embedded Node REST and static file server asynchronously
 const { spawn } = require('child_process');
-const serverPath = path.join(__dirname, 'server.py');
-console.log('[Electron Core] Spawning Python core database server:', serverPath);
+const serverPath = path.join(__dirname, 'dist', 'server.cjs');
+console.log('[Electron Core] Spawning Node core application server:', serverPath);
 
-const pythonProcess = spawn('python3', [serverPath], {
-  env: { ...process.env, PORT: '3000' },
+const serverProcess = spawn(process.execPath, [serverPath], {
+  env: { ...process.env, PORT: '3000', NODE_ENV: 'production' },
   stdio: 'inherit'
 });
 
-pythonProcess.on('error', (err) => {
-  console.error('[Electron Core] Critical: Failed to spawn Python database server:', err);
+serverProcess.on('error', (err) => {
+  console.error('[Electron Core] Critical: Failed to spawn Node core application server:', err);
 });
 
-// Ensure python process is killed when Electron main loop exits or quits
+// Ensure background server process is killed when Electron main loop exits or quits
 app.on('will-quit', () => {
-  console.log('[Electron Core] Stopping Python core database server...');
-  pythonProcess.kill();
+  console.log('[Electron Core] Stopping embedded server process...');
+  serverProcess.kill();
 });
 process.on('exit', () => {
-  pythonProcess.kill();
+  serverProcess.kill();
 });
 
 let mainWindow = null;

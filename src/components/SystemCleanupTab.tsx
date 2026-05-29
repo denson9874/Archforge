@@ -27,6 +27,7 @@ export default function SystemCleanupTab() {
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLogs, setCleanLogs] = useState<string[]>([]);
   const [cleanComplete, setCleanComplete] = useState(false);
+  const [cleanError, setCleanError] = useState<string | null>(null);
   
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [totalSpaceToFree, setTotalSpaceToFree] = useState("0 B");
@@ -51,6 +52,7 @@ export default function SystemCleanupTab() {
 
   const fetchScan = async (background = false) => {
     setIsScanning(true);
+    setCleanError(null);
     if (!background) {
       setResults(null);
       setCleanComplete(false);
@@ -67,6 +69,7 @@ export default function SystemCleanupTab() {
       setSelectedAurCaches(data.aurCacheFiles || []);
     } catch (e) {
       console.error(e);
+      setCleanError(String(e));
     } finally {
       setIsScanning(false);
     }
@@ -106,28 +109,57 @@ export default function SystemCleanupTab() {
     setIsCleaning(true);
     setCleanLogs([]);
     setCleanComplete(false);
+    setCleanError(null);
     
     try {
+      const payload = { 
+        removeOrphans: options.removeOrphans,
+        clearSystemCache: options.clearSystemCache,
+        clearAurCache: options.clearAurCache,
+        selectedOrphans: selectedOrphans.length > 0 ? selectedOrphans : undefined,
+        selectedAurCaches: selectedAurCaches.length > 0 ? selectedAurCaches : undefined
+      };
+      
+      console.log("[Cleanup] Sending request:", payload);
+      
       const res = await fetch("/api/system/cleanup/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...options, selectedOrphans, selectedAurCaches })
+        body: JSON.stringify(payload)
       });
+      
+      console.log("[Cleanup] Response status:", res.status, res.statusText);
+      
       if (!res.ok) {
-        throw new Error(`Execution failed: ${res.statusText}`);
+        const errorText = await res.text();
+        console.error("[Cleanup] Error response:", errorText);
+        throw new Error(`Execution failed: ${res.status} ${res.statusText}\n${errorText}`);
       }
+      
       const data = await res.json();
+      console.log("[Cleanup] Response data:", data);
+      
       if (data.success) {
-        setCleanLogs(data.logs || []);
+        const logs = data.logs || [];
+        setCleanLogs(logs);
         setCleanComplete(true);
         setShowToast(true);
         setShowConfirmModal(false);
         setTimeout(() => setShowToast(false), 4000);
         // Rescan after a short delay
         setTimeout(() => fetchScan(true), 3000);
+      } else {
+        const errorMsg = data.error || "Unknown error";
+        setCleanLogs([`Cleanup failed: ${errorMsg}`]);
+        setCleanError(errorMsg);
+        throw new Error(`Cleanup returned success: false - ${errorMsg}`);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      const errorMsg = e?.message || String(e);
+      console.error("[Cleanup] Exception:", e);
+      setCleanLogs([`Error: ${errorMsg}`]);
+      setCleanError(errorMsg);
+      setCleanComplete(false);
     } finally {
       setIsCleaning(false);
     }
@@ -439,11 +471,16 @@ export default function SystemCleanupTab() {
                <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                  <TerminalIcon className="h-3.5 w-3.5"/> Action Logs
                </span>
-               {cleanComplete && <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Complete</span>}
+               {cleanComplete && !cleanError && <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Complete</span>}
+               {cleanError && <span className="text-xs font-semibold text-red-400 flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Error</span>}
             </div>
-            <div className="p-4 font-mono text-xs text-slate-300 space-y-1.5 max-h-48 overflow-y-auto">
+            <div className={`p-4 font-mono text-xs space-y-1.5 max-h-48 overflow-y-auto ${cleanError ? "text-red-300" : "text-slate-300"}`}>
                {cleanLogs.map((log, i) => (
-                 <div key={i} className={log.startsWith("==>") ? "text-cyan-400 font-bold mt-2" : "text-slate-400 ml-4"}>
+                 <div key={i} className={
+                   log.startsWith("==>") ? "text-cyan-400 font-bold mt-2" :
+                   log.startsWith("Error") ? "text-red-400 ml-4" :
+                   "text-slate-400 ml-4"
+                 }>
                    {log}
                  </div>
                ))}

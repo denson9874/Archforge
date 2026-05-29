@@ -1,13 +1,7 @@
-mod state;
-mod aur;
-mod api;
-mod models;
-mod health;
-
 use actix_web::{web, App, HttpServer, middleware};
+use archweaver_server::{api, state::AppState};
 use parking_lot::RwLock;
 use std::sync::Arc;
-use state::AppState;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
